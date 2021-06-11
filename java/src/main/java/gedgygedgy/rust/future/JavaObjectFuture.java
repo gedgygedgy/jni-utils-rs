@@ -1,14 +1,10 @@
 package gedgygedgy.rust.future;
 
 public class JavaObjectFuture<T> {
-    private long waker;
+    private final Waker waker = new Waker();
     private T result;
     private boolean haveResult = false;
     private final Object resultLock = new Object();
-
-    public JavaObjectFuture() {
-        this.initWaker();
-    }
 
     public PollResult<T> poll() {
         synchronized (this.resultLock) {
@@ -25,10 +21,24 @@ public class JavaObjectFuture<T> {
             this.haveResult = true;
             this.result = result;
         }
-        this.wakeInternal();
+        this.waker.wake();
     }
 
-    private native void initWaker();
+    // This is its own object so that JNIEnv::{get,set}_rust_field() can lock it
+    // without interfering with anyone else.
+    private static class Waker {
+        @SuppressWarnings("unused") // This is used by native code.
+        public long waker;
 
-    private native void wakeInternal();
+        public Waker() {
+            this.init();
+        }
+
+        private native void init();
+
+        public native void wake();
+
+        @Override
+        protected native void finalize();
+    }
 }
