@@ -44,14 +44,16 @@ pub(crate) mod test_utils {
     }
 
     unsafe fn test_waker_wake(ptr: *const ()) {
+        test_waker_wake_by_ref(ptr);
+        let data_ptr = ptr as *const TestWakerData;
+        Arc::decrement_strong_count(data_ptr);
+    }
+
+    unsafe fn test_waker_wake_by_ref(ptr: *const ()) {
         let data_ptr = ptr as *const TestWakerData;
         let data = &*data_ptr;
         let mut lock = data.lock().unwrap();
         *lock = true;
-    }
-
-    unsafe fn test_waker_wake_by_ref(ptr: *const ()) {
-        test_waker_wake(ptr)
     }
 
     unsafe fn test_waker_drop(ptr: *const ()) {
@@ -100,22 +102,28 @@ mod test {
     #[test]
     pub fn test_raw_waker_wake() {
         let data = Arc::new(crate::test_utils::TestWakerData::new(false));
+        assert_eq!(Arc::strong_count(&data), 1);
 
         let waker: Waker = crate::test_utils::test_waker(&data);
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), false);
 
         waker.wake();
+        assert_eq!(Arc::strong_count(&data), 1);
         assert_eq!(*data.lock().unwrap(), true);
     }
 
     #[test]
     pub fn test_raw_waker_wake_by_ref() {
         let data = Arc::new(crate::test_utils::TestWakerData::new(false));
+        assert_eq!(Arc::strong_count(&data), 1);
 
         let waker: Waker = crate::test_utils::test_waker(&data);
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), false);
 
         waker.wake_by_ref();
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), true);
     }
 }
