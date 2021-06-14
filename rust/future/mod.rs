@@ -167,39 +167,3 @@ pub(crate) mod jni {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod test {
-    use jni::{objects::JObject, InitArgsBuilder, JavaVM};
-    use std::{env, path::PathBuf};
-
-    fn make_vm() -> JavaVM {
-        let mut jni_utils_jar = PathBuf::from(env::current_exe().unwrap());
-        jni_utils_jar.pop();
-        jni_utils_jar.pop();
-        jni_utils_jar.push("java");
-        jni_utils_jar.push("libs");
-        jni_utils_jar.push("jni-utils.jar");
-
-        let args = InitArgsBuilder::new()
-            .option(&format!(
-                "-Djava.class.path={}",
-                jni_utils_jar.to_str().unwrap()
-            ))
-            .build()
-            .unwrap();
-        let vm = JavaVM::new(args).unwrap();
-
-        let env = vm.attach_current_thread_permanently().unwrap();
-        crate::init(&env).unwrap();
-
-        vm
-    }
-
-    #[test]
-    fn test_init() {
-        let vm = make_vm();
-        let env = vm.attach_current_thread_permanently().unwrap();
-        let future = super::JavaObjectFuture::from_env(&env, JObject::null()).unwrap();
-    }
-}

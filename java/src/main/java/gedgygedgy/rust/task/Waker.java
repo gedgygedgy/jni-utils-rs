@@ -1,9 +1,11 @@
 package gedgygedgy.rust.task;
 
-public class Waker {
+public final class Waker {
     private long data;
 
     private Waker() {}
 
     public native void wake();
+
+    protected native void finalize();
 }

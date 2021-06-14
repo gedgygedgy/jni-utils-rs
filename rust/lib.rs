@@ -24,6 +24,8 @@ pub(crate) mod jni {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use jni::JavaVM;
+    use lazy_static::lazy_static;
     use std::{
         sync::{Arc, Mutex},
         task::{RawWaker, RawWakerVTable, Waker},
@@ -70,6 +72,35 @@ pub(crate) mod test_utils {
 
     pub fn test_waker(data: &Arc<TestWakerData>) -> Waker {
         unsafe { Waker::from_raw(test_waker_new(data)) }
+    }
+
+    lazy_static! {
+        pub static ref JVM: JavaVM = {
+            use jni::InitArgsBuilder;
+            use std::{env, mem, path::PathBuf};
+
+            let mut jni_utils_jar = PathBuf::from(env::current_exe().unwrap());
+            jni_utils_jar.pop();
+            jni_utils_jar.pop();
+            jni_utils_jar.push("java");
+            jni_utils_jar.push("libs");
+            jni_utils_jar.push("jni-utils.jar");
+
+            let jvm_args = InitArgsBuilder::new()
+                .option(&format!(
+                    "-Djava.class.path={}",
+                    jni_utils_jar.to_str().unwrap()
+                ))
+                .build()
+                .unwrap();
+            let jvm = JavaVM::new(jvm_args).unwrap();
+
+            let attach_guard = jvm.attach_current_thread().unwrap();
+            crate::init(&*attach_guard).unwrap();
+            mem::drop(attach_guard);
+
+            jvm
+        };
     }
 }
 
