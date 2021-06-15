@@ -76,7 +76,7 @@ pub(crate) mod test_utils {
     lazy_static! {
         pub static ref JVM: JavaVM = {
             use jni::InitArgsBuilder;
-            use std::{env, mem, path::PathBuf};
+            use std::{env, path::PathBuf};
 
             let mut jni_utils_jar = PathBuf::from(env::current_exe().unwrap());
             jni_utils_jar.pop();
@@ -94,9 +94,8 @@ pub(crate) mod test_utils {
                 .unwrap();
             let jvm = JavaVM::new(jvm_args).unwrap();
 
-            let attach_guard = jvm.attach_current_thread().unwrap();
-            crate::init(&*attach_guard).unwrap();
-            mem::drop(attach_guard);
+            let env = jvm.attach_current_thread_permanently().unwrap();
+            crate::init(&env).unwrap();
 
             jvm
         };
