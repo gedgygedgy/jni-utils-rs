@@ -1,13 +1,14 @@
 package gedgygedgy.rust.future;
 import gedgygedgy.rust.task.Poll;
-import gedgygedgy.rust.task.Waker;
 
 public final class Future<T> {
-    private Waker waker = null;
+    private gedgygedgy.rust.task.Waker waker = null;
     private Poll<T> result;
     private final Object lock = new Object();
 
-    public Poll<T> poll(Waker waker) {
+    private Future() {}
+
+    public Poll<T> poll(gedgygedgy.rust.task.Waker waker) {
         synchronized (this.lock) {
             if (this.result != null) {
                 return this.result;
@@ -18,16 +19,32 @@ public final class Future<T> {
         }
     }
 
-    public void wake(T result) {
-        Waker waker = null;
-        synchronized (this.lock) {
-            this.result = () -> {
-                return result;
-            };
-            waker = this.waker;
+    public static <U> Future.Waker<U> create() {
+        return new Waker<U>(new Future<U>());
+    }
+
+    public static class Waker<T> {
+        private final Future<T> future;
+
+        private Waker(Future<T> future) {
+            this.future = future;
         }
-        if (waker != null) {
-            waker.wake();
+
+        public Future<T> getFuture() {
+            return this.future;
+        }
+
+        public void wake(T result) {
+            gedgygedgy.rust.task.Waker waker = null;
+            synchronized (this.future.lock) {
+                this.future.result = () -> {
+                    return result;
+                };
+                waker = this.future.waker;
+            }
+            if (waker != null) {
+                waker.wake();
+            }
         }
     }
 }

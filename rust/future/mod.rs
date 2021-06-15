@@ -196,10 +196,27 @@ mod test {
         assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), false);
 
+        let waker_obj = env
+            .call_static_method(
+                "gedgygedgy/rust/future/Future",
+                "create",
+                "()Lgedgygedgy/rust/future/Future$Waker;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap();
         let mut future = JFuture::from_env(
             env,
-            env.new_object("gedgygedgy/rust/future/Future", "()V", &[])
-                .unwrap(),
+            env.call_method(
+                waker_obj,
+                "getFuture",
+                "()Lgedgygedgy/rust/future/Future;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap(),
         )
         .unwrap();
 
@@ -208,7 +225,7 @@ mod test {
         assert_eq!(*data.lock().unwrap(), false);
 
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        env.call_method(*future, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+        env.call_method(waker_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
             .unwrap();
         assert_eq!(Arc::strong_count(&data), 3);
         assert_eq!(*data.lock().unwrap(), true);
@@ -228,19 +245,35 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
+        let waker_obj = env
+            .call_static_method(
+                "gedgygedgy/rust/future/Future",
+                "create",
+                "()Lgedgygedgy/rust/future/Future$Waker;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap();
         let future = JFuture::from_env(
             env,
-            env.new_object("gedgygedgy/rust/future/Future", "()V", &[])
-                .unwrap(),
+            env.call_method(
+                waker_obj,
+                "getFuture",
+                "()Lgedgygedgy/rust/future/Future;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap(),
         )
         .unwrap();
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
         block_on(async {
-            let future_obj = *future;
             join!(
                 async {
-                    env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                    env.call_method(waker_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
                         .unwrap();
                 },
                 async {
@@ -258,28 +291,37 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
+        let waker_obj = env
+            .call_static_method(
+                "gedgygedgy/rust/future/Future",
+                "create",
+                "()Lgedgygedgy/rust/future/Future$Waker;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap();
         let future = JFuture::from_env(
             env,
-            env.new_object("gedgygedgy/rust/future/Future", "()V", &[])
-                .unwrap(),
+            env.call_method(
+                waker_obj,
+                "getFuture",
+                "()Lgedgygedgy/rust/future/Future;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap(),
         )
         .unwrap();
         let future: JavaFuture = future.try_into().unwrap();
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
         block_on(async {
-            use jni::objects::GlobalRef;
-
-            let future_ref: GlobalRef = future.clone();
             join!(
                 async {
-                    env.call_method(
-                        future_ref.as_obj(),
-                        "wake",
-                        "(Ljava/lang/Object;)V",
-                        &[obj.into()],
-                    )
-                    .unwrap();
+                    env.call_method(waker_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                        .unwrap();
                 },
                 async {
                     assert!(env
