@@ -14,8 +14,17 @@ pub(crate) mod jni {
     use std::{ffi::c_void, sync::MutexGuard, task::Waker};
 
     fn waker_wake_impl(env: JNIEnv, obj: JObject) -> Result<()> {
-        let waker: MutexGuard<Waker> = env.get_rust_field(obj, "data")?;
-        waker.wake_by_ref();
+        use jni::errors::Error;
+
+        let result: Result<MutexGuard<Waker>> = env.get_rust_field(obj, "data");
+        match result {
+            Ok(waker) => waker.wake_by_ref(),
+            Err(Error::NullPtr(_)) => env.throw_new(
+                "java/lang/NullPointerException",
+                "This Waker has already been finalized",
+            )?,
+            Err(_) => (),
+        }
         Ok(())
     }
 
@@ -47,6 +56,8 @@ mod test {
 
     #[test]
     fn test_waker() {
+        use jni::{errors::Error, objects::JString};
+
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
@@ -67,6 +78,32 @@ mod test {
         assert_eq!(*data.lock().unwrap(), true);
 
         env.call_method(jwaker, "finalize", "()V", &[]).unwrap();
+        assert_eq!(Arc::strong_count(&data), 1);
+        assert_eq!(*data.lock().unwrap(), true);
+
+        if let Error::JavaException = env.call_method(jwaker, "wake", "()V", &[]).unwrap_err() {
+        } else {
+            panic!("Second wake() should have thrown an exception")
+        }
+        let ex = env.exception_occurred().unwrap();
+        env.exception_clear().unwrap();
+
+        let class = env.get_object_class(ex).unwrap();
+        let null_ptr_ex = env.find_class("java/lang/NullPointerException").unwrap();
+        assert!(env.is_same_object(class, null_ptr_ex).unwrap());
+
+        let message: JString = env
+            .call_method(ex, "getMessage", "()Ljava/lang/String;", &[])
+            .unwrap()
+            .l()
+            .unwrap()
+            .into();
+        let message_str = env.get_string(message).unwrap();
+        assert_eq!(
+            message_str.to_str().unwrap(),
+            "This Waker has already been finalized"
+        );
+
         assert_eq!(Arc::strong_count(&data), 1);
         assert_eq!(*data.lock().unwrap(), true);
     }
