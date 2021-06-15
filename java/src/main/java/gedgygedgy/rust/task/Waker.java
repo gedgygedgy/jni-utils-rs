@@ -7,5 +7,6 @@ public final class Waker {
 
     public native void wake();
 
+    @Override
     protected native void finalize();
 }
