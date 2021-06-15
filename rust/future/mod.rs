@@ -85,7 +85,7 @@ impl<'a: 'b, 'b> Future for JFuture<'a, 'b> {
     type Output = Result<JObject<'a>>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
-        match (*self).poll_internal(context) {
+        match self.poll_internal(context) {
             Ok(Poll::Ready(result)) => Poll::Ready(Ok(result)),
             Ok(Poll::Pending) => Poll::Pending,
             Err(err) => Poll::Ready(Err(err)),
