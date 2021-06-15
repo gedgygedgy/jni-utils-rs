@@ -1,10 +1,12 @@
 use ::jni::{
-    errors::Result,
-    objects::{JMethodID, JObject},
+    errors::{Error, Result},
+    objects::{GlobalRef, JMethodID, JObject},
     signature::JavaType,
-    JNIEnv,
+    JNIEnv, JavaVM,
 };
+use static_assertions::assert_impl_all;
 use std::{
+    convert::TryFrom,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
@@ -91,6 +93,54 @@ impl<'a: 'b, 'b> Future for JFuture<'a, 'b> {
     }
 }
 
+pub struct JavaFuture {
+    internal: GlobalRef,
+    vm: JavaVM,
+}
+
+impl<'a: 'b, 'b> TryFrom<JFuture<'a, 'b>> for JavaFuture {
+    type Error = Error;
+
+    fn try_from(future: JFuture<'a, 'b>) -> Result<Self> {
+        Ok(JavaFuture {
+            internal: future.env.new_global_ref(future.internal)?,
+            vm: future.env.get_java_vm()?,
+        })
+    }
+}
+
+impl ::std::ops::Deref for JavaFuture {
+    type Target = GlobalRef;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
+    }
+}
+
+impl JavaFuture {
+    fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<Result<GlobalRef>>> {
+        let guard = self.vm.attach_current_thread()?;
+        let env = &*guard;
+        let jfuture = JFuture::from_env(env, self.internal.as_obj())?;
+        jfuture
+            .poll_internal(context)
+            .map(|result| result.map(|obj| env.new_global_ref(obj)))
+    }
+}
+
+impl Future for JavaFuture {
+    type Output = Result<GlobalRef>;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.poll_internal(context) {
+            Ok(result) => result,
+            Err(err) => Poll::Ready(Err(err)),
+        }
+    }
+}
+
+assert_impl_all!(JavaFuture: Send);
+
 pub struct JPoll<'a: 'b, 'b> {
     internal: JObject<'a>,
     get: JMethodID<'a>,
@@ -123,7 +173,7 @@ impl<'a: 'b, 'b> JPoll<'a, 'b> {
 
 #[cfg(test)]
 mod test {
-    use super::JFuture;
+    use super::{JFuture, JavaFuture};
     use crate::test_utils;
     use std::{
         future::Future,
@@ -132,7 +182,7 @@ mod test {
     };
 
     #[test]
-    fn test_future() {
+    fn test_jfuture() {
         use std::sync::{Arc, Mutex};
 
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
@@ -172,7 +222,7 @@ mod test {
     }
 
     #[test]
-    fn test_future_await() {
+    fn test_jfuture_await() {
         use futures::{executor::block_on, join};
         use jni::{objects::JObject, JNIEnv};
 
@@ -210,6 +260,56 @@ mod test {
             obj: JObject<'a>,
         ) {
             join!(future_wake(env, *future, obj), future_get(env, future, obj));
+        }
+
+        block_on(future_join(env, future, obj));
+    }
+
+    #[test]
+    fn test_java_future_await() {
+        use futures::{executor::block_on, join};
+        use jni::{objects::JObject, JNIEnv};
+        use std::convert::TryInto;
+
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let future = JFuture::from_env(
+            env,
+            env.new_object("gedgygedgy/rust/future/Future", "()V", &[])
+                .unwrap(),
+        )
+        .unwrap();
+        let future: JavaFuture = future.try_into().unwrap();
+        let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+
+        async fn future_wake<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            future_obj: JObject<'a>,
+            obj: JObject<'a>,
+        ) {
+            env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                .unwrap();
+        }
+
+        async fn future_get<'a: 'b, 'b>(env: &'b JNIEnv<'a>, future: JavaFuture, obj: JObject<'a>) {
+            assert!(env
+                .is_same_object(future.await.unwrap().as_obj(), obj)
+                .unwrap());
+        }
+
+        async fn future_join<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            future: JavaFuture,
+            obj: JObject<'a>,
+        ) {
+            use jni::objects::GlobalRef;
+
+            let future_ref: GlobalRef = future.clone();
+            join!(
+                future_wake(env, future_ref.as_obj(), obj),
+                future_get(env, future, obj)
+            );
         }
 
         block_on(future_join(env, future, obj));
