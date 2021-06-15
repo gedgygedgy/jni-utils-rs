@@ -224,7 +224,6 @@ mod test {
     #[test]
     fn test_jfuture_await() {
         use futures::{executor::block_on, join};
-        use jni::{objects::JObject, JNIEnv};
 
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
@@ -237,38 +236,23 @@ mod test {
         .unwrap();
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
-        async fn future_wake<'a: 'b, 'b>(
-            env: &'b JNIEnv<'a>,
-            future_obj: JObject<'a>,
-            obj: JObject<'a>,
-        ) {
-            env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
-                .unwrap();
-        }
-
-        async fn future_get<'a: 'b, 'b>(
-            env: &'b JNIEnv<'a>,
-            future: JFuture<'a, 'b>,
-            obj: JObject<'a>,
-        ) {
-            assert!(env.is_same_object(future.await.unwrap(), obj).unwrap());
-        }
-
-        async fn future_join<'a: 'b, 'b>(
-            env: &'b JNIEnv<'a>,
-            future: JFuture<'a, 'b>,
-            obj: JObject<'a>,
-        ) {
-            join!(future_wake(env, *future, obj), future_get(env, future, obj));
-        }
-
-        block_on(future_join(env, future, obj));
+        block_on(async {
+            let future_obj = *future;
+            join!(
+                async {
+                    env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                        .unwrap();
+                },
+                async {
+                    assert!(env.is_same_object(future.await.unwrap(), obj).unwrap());
+                }
+            );
+        });
     }
 
     #[test]
     fn test_java_future_await() {
         use futures::{executor::block_on, join};
-        use jni::{objects::JObject, JNIEnv};
         use std::convert::TryInto;
 
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
@@ -283,35 +267,26 @@ mod test {
         let future: JavaFuture = future.try_into().unwrap();
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
-        async fn future_wake<'a: 'b, 'b>(
-            env: &'b JNIEnv<'a>,
-            future_obj: JObject<'a>,
-            obj: JObject<'a>,
-        ) {
-            env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
-                .unwrap();
-        }
-
-        async fn future_get<'a: 'b, 'b>(env: &'b JNIEnv<'a>, future: JavaFuture, obj: JObject<'a>) {
-            assert!(env
-                .is_same_object(future.await.unwrap().as_obj(), obj)
-                .unwrap());
-        }
-
-        async fn future_join<'a: 'b, 'b>(
-            env: &'b JNIEnv<'a>,
-            future: JavaFuture,
-            obj: JObject<'a>,
-        ) {
+        block_on(async {
             use jni::objects::GlobalRef;
 
             let future_ref: GlobalRef = future.clone();
             join!(
-                future_wake(env, future_ref.as_obj(), obj),
-                future_get(env, future, obj)
+                async {
+                    env.call_method(
+                        future_ref.as_obj(),
+                        "wake",
+                        "(Ljava/lang/Object;)V",
+                        &[obj.into()],
+                    )
+                    .unwrap();
+                },
+                async {
+                    assert!(env
+                        .is_same_object(future.await.unwrap().as_obj(), obj)
+                        .unwrap());
+                }
             );
-        }
-
-        block_on(future_join(env, future, obj));
+        });
     }
 }
