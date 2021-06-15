@@ -1,81 +1,85 @@
 use ::jni::{
     errors::Result,
-    objects::{JFieldID, JMethodID, JObject},
+    objects::{JMethodID, JObject},
     signature::JavaType,
     JNIEnv,
 };
 use std::{
     future::Future,
     pin::Pin,
-    sync::MutexGuard,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
 
-pub struct JavaObjectFuture<'a: 'b, 'b> {
+pub struct JFuture<'a: 'b, 'b> {
     internal: JObject<'a>,
-    waker: JFieldID<'a>,
     poll: JMethodID<'a>,
     env: &'b JNIEnv<'a>,
 }
 
-impl<'a: 'b, 'b> JavaObjectFuture<'a, 'b> {
+impl<'a: 'b, 'b> JFuture<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
-        let class = env.auto_local(env.find_class("gedgygedgy/rust/future/JavaObjectFuture")?);
+        let class = env.auto_local(env.find_class("gedgygedgy/rust/future/Future")?);
 
-        let waker = env.get_field_id(
+        let poll = env.get_method_id(
             &class,
-            "waker",
-            "Lgedgygedgy/rust/future/JavaObjectFuture$Waker;",
+            "poll",
+            "(Lgedgygedgy/rust/task/Waker;)Lgedgygedgy/rust/task/Poll;",
         )?;
-        let poll = env.get_method_id(&class, "poll", "()Lgedgygedgy/rust/future/PollResult;")?;
         Ok(Self {
             internal: obj,
-            waker,
             poll,
             env,
         })
     }
 
-    pub fn j_poll(&self) -> Result<Option<JObject<'a>>> {
+    pub fn j_poll(&self, waker: JObject<'a>) -> Result<Option<JObject<'a>>> {
         let result = self
             .env
             .call_method_unchecked(
                 self.internal,
                 self.poll,
-                JavaType::Object("gedgygedgy/rust/future/PollResult".into()),
-                &[],
+                JavaType::Object("gedgygedgy/rust/task/Poll".into()),
+                &[waker.into()],
             )?
             .l()?;
 
         Ok(if self.env.is_same_object(result, JObject::null())? {
             None
         } else {
-            let poll_result = JPollResult::from_env(self.env, result)?;
-            Some(poll_result.get()?)
+            let poll = JPoll::from_env(self.env, result)?;
+            Some(poll.get()?)
         })
     }
 
     // Switch the Result and Poll return value to make this easier to implement using ?.
     fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<JObject<'a>>> {
-        Ok(if let Some(obj) = self.j_poll()? {
-            Poll::Ready(obj)
-        } else {
-            let waker = self
-                .env
-                .get_field_unchecked(
-                    self.internal,
-                    self.waker,
-                    JavaType::Object("gedgygedgy/rust/future/JavaObjectFuture$Waker".into()),
-                )?
-                .l()?;
-            let mut waker: MutexGuard<Option<Waker>> = self.env.get_rust_field(waker, "waker")?;
-            *waker = Some(context.waker().clone());
-            Poll::Pending
-        })
+        use crate::task::waker;
+
+        Ok(
+            if let Some(obj) = self.j_poll(waker(self.env, context.waker().clone())?)? {
+                Poll::Ready(obj)
+            } else {
+                Poll::Pending
+            },
+        )
     }
 }
 
-impl<'a: 'b, 'b> Future for JavaObjectFuture<'a, 'b> {
+impl<'a: 'b, 'b> ::std::ops::Deref for JFuture<'a, 'b> {
+    type Target = JObject<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
+    }
+}
+
+impl<'a: 'b, 'b> From<JFuture<'a, 'b>> for JObject<'a> {
+    fn from(other: JFuture<'a, 'b>) -> JObject<'a> {
+        other.internal
+    }
+}
+
+impl<'a: 'b, 'b> Future for JFuture<'a, 'b> {
     type Output = Result<JObject<'a>>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
@@ -87,15 +91,15 @@ impl<'a: 'b, 'b> Future for JavaObjectFuture<'a, 'b> {
     }
 }
 
-pub struct JPollResult<'a: 'b, 'b> {
+pub struct JPoll<'a: 'b, 'b> {
     internal: JObject<'a>,
     get: JMethodID<'a>,
     env: &'b JNIEnv<'a>,
 }
 
-impl<'a: 'b, 'b> JPollResult<'a, 'b> {
+impl<'a: 'b, 'b> JPoll<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
-        let class = env.auto_local(env.find_class("gedgygedgy/rust/future/PollResult")?);
+        let class = env.auto_local(env.find_class("gedgygedgy/rust/task/Poll")?);
 
         let get = env.get_method_id(&class, "get", "()Ljava/lang/Object;")?;
         Ok(Self {
@@ -117,53 +121,97 @@ impl<'a: 'b, 'b> JPollResult<'a, 'b> {
     }
 }
 
-pub(crate) mod jni {
-    use jni::{errors::Result, objects::JObject, JNIEnv, NativeMethod};
-    use std::{ffi::c_void, sync::MutexGuard, task::Waker};
+#[cfg(test)]
+mod test {
+    use super::JFuture;
+    use crate::test_utils;
+    use std::{
+        future::Future,
+        pin::Pin,
+        task::{Context, Poll},
+    };
 
-    fn native(name: &str, sig: &str, fn_ptr: *mut c_void) -> NativeMethod {
-        NativeMethod {
-            name: name.into(),
-            sig: sig.into(),
-            fn_ptr,
+    #[test]
+    fn test_future() {
+        use std::sync::{Arc, Mutex};
+
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let data = Arc::new(Mutex::new(false));
+        assert_eq!(Arc::strong_count(&data), 1);
+        assert_eq!(*data.lock().unwrap(), false);
+
+        let waker = test_utils::test_waker(&data);
+        assert_eq!(Arc::strong_count(&data), 2);
+        assert_eq!(*data.lock().unwrap(), false);
+
+        let mut future = JFuture::from_env(
+            env,
+            env.new_object("gedgygedgy/rust/future/Future", "()V", &[])
+                .unwrap(),
+        )
+        .unwrap();
+
+        assert!(Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending());
+        assert_eq!(Arc::strong_count(&data), 3);
+        assert_eq!(*data.lock().unwrap(), false);
+
+        let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+        env.call_method(*future, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+            .unwrap();
+        assert_eq!(Arc::strong_count(&data), 3);
+        assert_eq!(*data.lock().unwrap(), true);
+
+        let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
+        if let Poll::Ready(result) = poll {
+            assert!(env.is_same_object(result.unwrap(), obj).unwrap());
+        } else {
+            panic!("Poll result should be ready");
         }
     }
 
-    extern "C" fn java_object_future_waker_init(env: JNIEnv, obj: JObject) {
-        let field: Option<Waker> = None;
-        let _ = env.set_rust_field(obj, "waker", field);
-    }
+    #[test]
+    fn test_future_await() {
+        use futures::{executor::block_on, join};
+        use jni::{objects::JObject, JNIEnv};
 
-    fn java_object_future_waker_wake_impl(env: JNIEnv, obj: JObject) -> Result<()> {
-        let mut waker_field: MutexGuard<Option<Waker>> = env.get_rust_field(obj, "waker")?;
-        if let Some(waker) = (*waker_field).take() {
-            waker.wake();
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let future = JFuture::from_env(
+            env,
+            env.new_object("gedgygedgy/rust/future/Future", "()V", &[])
+                .unwrap(),
+        )
+        .unwrap();
+        let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+
+        async fn future_wake<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            future_obj: JObject<'a>,
+            obj: JObject<'a>,
+        ) {
+            env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                .unwrap();
         }
-        Ok(())
-    }
 
-    extern "C" fn java_object_future_waker_wake(env: JNIEnv, obj: JObject) {
-        let _ = java_object_future_waker_wake_impl(env, obj);
-    }
+        async fn future_get<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            future: JFuture<'a, 'b>,
+            obj: JObject<'a>,
+        ) {
+            assert!(env.is_same_object(future.await.unwrap(), obj).unwrap());
+        }
 
-    extern "C" fn java_object_future_waker_finalize(env: JNIEnv, obj: JObject) {
-        let _: Option<Waker> = env.take_rust_field(obj, "waker").unwrap();
-    }
+        async fn future_join<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            future: JFuture<'a, 'b>,
+            obj: JObject<'a>,
+        ) {
+            join!(future_wake(env, *future, obj), future_get(env, future, obj));
+        }
 
-    pub fn init(env: &JNIEnv) -> Result<()> {
-        let class = env.find_class("gedgygedgy/rust/future/JavaObjectFuture$Waker")?;
-        env.register_native_methods(
-            class,
-            &[
-                native("init", "()V", java_object_future_waker_init as *mut c_void),
-                native("wake", "()V", java_object_future_waker_wake as *mut c_void),
-                native(
-                    "finalize",
-                    "()V",
-                    java_object_future_waker_finalize as *mut c_void,
-                ),
-            ],
-        )?;
-        Ok(())
+        block_on(future_join(env, future, obj));
     }
 }

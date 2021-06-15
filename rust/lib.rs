@@ -5,7 +5,6 @@ pub mod task;
 
 pub fn init(env: &JNIEnv) -> Result<()> {
     task::jni::init(env)?;
-    future::jni::init(env)?;
     Ok(())
 }
 
