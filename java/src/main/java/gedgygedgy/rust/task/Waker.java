@@ -8,5 +8,6 @@ public final class Waker {
     public native void wake();
 
     @Override
+    @SuppressWarnings("deprecation") // We want finalize() to clean up the memory.
     protected native void finalize();
 }
