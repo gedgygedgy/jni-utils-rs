@@ -1,6 +1,6 @@
 use ::jni::{
     errors::{Error, Result},
-    objects::{GlobalRef, JMethodID, JObject},
+    objects::{GlobalRef, JMethodID, JObject, JThrowable},
     signature::JavaType,
     JNIEnv, JavaVM,
 };
@@ -64,6 +64,22 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
                 Poll::Pending
             },
         )
+    }
+
+    pub fn future_exception(env: &'b JNIEnv<'a>, err: Error) -> Result<JThrowable<'a>> {
+        if let Error::JavaException = err {
+            let ex = env.exception_occurred()?;
+            env.exception_clear()?;
+            if env.is_instance_of(ex, "gedgygedgy/rust/future/FutureException")? {
+                return Ok(env
+                    .call_method(ex, "getCause", "()Ljava/lang/Throwable;", &[])?
+                    .l()?
+                    .into());
+            } else {
+                env.throw(ex)?; // Just in case it's not a FutureException
+            }
+        }
+        Err(err)
     }
 }
 
@@ -284,7 +300,7 @@ mod test {
     }
 
     #[test]
-    fn test_jfuture_await_throw() {
+    fn test_jfuture_await_future_exception() {
         use futures::{executor::block_on, join};
 
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
@@ -327,24 +343,9 @@ mod test {
                     .unwrap();
                 },
                 async {
-                    if let ::jni::errors::Error::JavaException = future.await.unwrap_err() {
-                    } else {
-                        panic!("Did not throw a Java exception");
-                    }
-                    let actual_ex = env.exception_occurred().unwrap();
-                    env.exception_clear().unwrap();
-                    assert!(env
-                        .is_instance_of(actual_ex, "gedgygedgy/rust/future/FutureException")
-                        .unwrap());
-                    assert!(env
-                        .is_same_object(
-                            env.call_method(actual_ex, "getCause", "()Ljava/lang/Throwable;", &[])
-                                .unwrap()
-                                .l()
-                                .unwrap(),
-                            ex
-                        )
-                        .unwrap());
+                    let err = future.await.unwrap_err();
+                    let actual_ex = JFuture::future_exception(env, err).unwrap();
+                    assert!(env.is_same_object(actual_ex, ex).unwrap());
                 }
             );
         });
