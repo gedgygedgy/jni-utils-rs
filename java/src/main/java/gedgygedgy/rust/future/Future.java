@@ -23,6 +23,17 @@ public final class Future<T> {
         return new Waker<U>(new Future<U>());
     }
 
+    private void wake(Poll result) {
+        gedgygedgy.rust.task.Waker waker = null;
+        synchronized (this.lock) {
+            this.result = result;
+            waker = this.waker;
+        }
+        if (waker != null) {
+            waker.wake();
+        }
+    }
+
     public static class Waker<T> {
         private final Future<T> future;
 
@@ -35,16 +46,15 @@ public final class Future<T> {
         }
 
         public void wake(T result) {
-            gedgygedgy.rust.task.Waker waker = null;
-            synchronized (this.future.lock) {
-                this.future.result = () -> {
-                    return result;
-                };
-                waker = this.future.waker;
-            }
-            if (waker != null) {
-                waker.wake();
-            }
+            this.future.wake(() -> {
+                return result;
+            });
+        }
+
+        public void wakeWithThrowable(Throwable result) {
+            this.future.wake(() -> {
+                throw new FutureException(result);
+            });
         }
     }
 }

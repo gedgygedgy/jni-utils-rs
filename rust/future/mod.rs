@@ -284,6 +284,73 @@ mod test {
     }
 
     #[test]
+    fn test_jfuture_await_throw() {
+        use futures::{executor::block_on, join};
+
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let waker_obj = env
+            .call_static_method(
+                "gedgygedgy/rust/future/Future",
+                "create",
+                "()Lgedgygedgy/rust/future/Future$Waker;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap();
+        let future = JFuture::from_env(
+            env,
+            env.call_method(
+                waker_obj,
+                "getFuture",
+                "()Lgedgygedgy/rust/future/Future;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap(),
+        )
+        .unwrap();
+        let ex = env.new_object("java/lang/Exception", "()V", &[]).unwrap();
+
+        block_on(async {
+            join!(
+                async {
+                    env.call_method(
+                        waker_obj,
+                        "wakeWithThrowable",
+                        "(Ljava/lang/Throwable;)V",
+                        &[ex.into()],
+                    )
+                    .unwrap();
+                },
+                async {
+                    if let ::jni::errors::Error::JavaException = future.await.unwrap_err() {
+                    } else {
+                        panic!("Did not throw a Java exception");
+                    }
+                    let actual_ex = env.exception_occurred().unwrap();
+                    env.exception_clear().unwrap();
+                    assert!(env
+                        .is_instance_of(actual_ex, "gedgygedgy/rust/future/FutureException")
+                        .unwrap());
+                    assert!(env
+                        .is_same_object(
+                            env.call_method(actual_ex, "getCause", "()Ljava/lang/Throwable;", &[])
+                                .unwrap()
+                                .l()
+                                .unwrap(),
+                            ex
+                        )
+                        .unwrap());
+                }
+            );
+        });
+    }
+
+    #[test]
     fn test_java_future_await() {
         use futures::{executor::block_on, join};
         use std::convert::TryInto;
