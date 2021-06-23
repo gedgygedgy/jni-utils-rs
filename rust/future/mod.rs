@@ -34,7 +34,10 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
         })
     }
 
-    pub fn j_poll(&self, waker: JObject<'a>) -> Result<Option<JObject<'a>>> {
+    pub fn j_poll(
+        &self,
+        waker: JObject<'a>,
+    ) -> Result<Option<std::result::Result<JObject<'a>, JThrowable<'a>>>> {
         let result = self
             .env
             .call_method_unchecked(
@@ -44,7 +47,6 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
                 &[waker.into()],
             )?
             .l()?;
-
         Ok(if self.env.is_same_object(result, JObject::null())? {
             None
         } else {
@@ -54,32 +56,19 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
     }
 
     // Switch the Result and Poll return value to make this easier to implement using ?.
-    fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<JObject<'a>>> {
+    fn poll_internal(
+        &self,
+        context: &mut Context<'_>,
+    ) -> Result<Poll<std::result::Result<JObject<'a>, JThrowable<'a>>>> {
         use crate::task::waker;
 
         Ok(
-            if let Some(obj) = self.j_poll(waker(self.env, context.waker().clone())?)? {
-                Poll::Ready(obj)
+            if let Some(result) = self.j_poll(waker(self.env, context.waker().clone())?)? {
+                Poll::Ready(result)
             } else {
                 Poll::Pending
             },
         )
-    }
-
-    pub fn future_exception(env: &'b JNIEnv<'a>, err: Error) -> Result<JThrowable<'a>> {
-        if let Error::JavaException = err {
-            let ex = env.exception_occurred()?;
-            env.exception_clear()?;
-            if env.is_instance_of(ex, "gedgygedgy/rust/future/FutureException")? {
-                return Ok(env
-                    .call_method(ex, "getCause", "()Ljava/lang/Throwable;", &[])?
-                    .l()?
-                    .into());
-            } else {
-                env.throw(ex)?; // Just in case it's not a FutureException
-            }
-        }
-        Err(err)
     }
 }
 
@@ -98,7 +87,7 @@ impl<'a: 'b, 'b> From<JFuture<'a, 'b>> for JObject<'a> {
 }
 
 impl<'a: 'b, 'b> Future for JFuture<'a, 'b> {
-    type Output = Result<JObject<'a>>;
+    type Output = Result<std::result::Result<JObject<'a>, JThrowable<'a>>>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         match self.poll_internal(context) {
@@ -134,18 +123,24 @@ impl ::std::ops::Deref for JavaFuture {
 }
 
 impl JavaFuture {
-    fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<Result<GlobalRef>>> {
+    fn poll_internal(
+        &self,
+        context: &mut Context<'_>,
+    ) -> Result<Poll<Result<std::result::Result<GlobalRef, GlobalRef>>>> {
         let guard = self.vm.attach_current_thread()?;
         let env = &*guard;
         let jfuture = JFuture::from_env(env, self.internal.as_obj())?;
-        jfuture
-            .poll_internal(context)
-            .map(|result| result.map(|obj| env.new_global_ref(obj)))
+        jfuture.poll_internal(context).map(|result| {
+            result.map(|result| match result {
+                Ok(obj) => Ok(Ok(env.new_global_ref(obj)?)),
+                Err(ex) => Ok(Err(env.new_global_ref(ex)?)),
+            })
+        })
     }
 }
 
 impl Future for JavaFuture {
-    type Output = Result<GlobalRef>;
+    type Output = Result<std::result::Result<GlobalRef, GlobalRef>>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         match self.poll_internal(context) {
@@ -175,15 +170,33 @@ impl<'a: 'b, 'b> JPoll<'a, 'b> {
         })
     }
 
-    pub fn get(&self) -> Result<JObject<'a>> {
-        self.env
-            .call_method_unchecked(
-                self.internal,
-                self.get,
-                JavaType::Object("java/lang/Object".into()),
-                &[],
-            )?
-            .l()
+    pub fn get(&self) -> Result<std::result::Result<JObject<'a>, JThrowable<'a>>> {
+        match self.env.call_method_unchecked(
+            self.internal,
+            self.get,
+            JavaType::Object("java/lang/Object".into()),
+            &[],
+        ) {
+            Ok(result) => Ok(Ok(result.l()?)),
+            Err(Error::JavaException) => {
+                let ex = self.env.exception_occurred()?;
+                self.env.exception_clear()?;
+                if self
+                    .env
+                    .is_instance_of(ex, "gedgygedgy/rust/future/FutureException")?
+                {
+                    let cause_ex = self
+                        .env
+                        .call_method(ex, "getCause", "()Ljava/lang/Throwable;", &[])?
+                        .l()?;
+                    Ok(Err(cause_ex.into()))
+                } else {
+                    self.env.throw(ex)?;
+                    Err(Error::JavaException)
+                }
+            }
+            Err(err) => Err(err),
+        }
     }
 }
 
@@ -248,7 +261,9 @@ mod test {
 
         let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
         if let Poll::Ready(result) = poll {
-            assert!(env.is_same_object(result.unwrap(), obj).unwrap());
+            assert!(env
+                .is_same_object(result.unwrap().ok().unwrap(), obj)
+                .unwrap());
         } else {
             panic!("Poll result should be ready");
         }
@@ -293,14 +308,16 @@ mod test {
                         .unwrap();
                 },
                 async {
-                    assert!(env.is_same_object(future.await.unwrap(), obj).unwrap());
+                    assert!(env
+                        .is_same_object(future.await.unwrap().ok().unwrap(), obj)
+                        .unwrap());
                 }
             );
         });
     }
 
     #[test]
-    fn test_jfuture_await_future_exception() {
+    fn test_jfuture_await_throw() {
         use futures::{executor::block_on, join};
 
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
@@ -343,8 +360,7 @@ mod test {
                     .unwrap();
                 },
                 async {
-                    let err = future.await.unwrap_err();
-                    let actual_ex = JFuture::future_exception(env, err).unwrap();
+                    let actual_ex = future.await.unwrap().err().unwrap();
                     assert!(env.is_same_object(actual_ex, ex).unwrap());
                 }
             );
@@ -393,7 +409,7 @@ mod test {
                 },
                 async {
                     assert!(env
-                        .is_same_object(future.await.unwrap().as_obj(), obj)
+                        .is_same_object(future.await.unwrap().ok().unwrap().as_obj(), obj)
                         .unwrap());
                 }
             );
