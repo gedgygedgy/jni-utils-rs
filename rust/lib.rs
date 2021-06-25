@@ -2,6 +2,7 @@ use ::jni::{errors::Result, JNIEnv};
 
 pub mod future;
 pub mod task;
+pub mod uuid;
 
 pub fn init(env: &JNIEnv) -> Result<()> {
     task::jni::init(env)?;
