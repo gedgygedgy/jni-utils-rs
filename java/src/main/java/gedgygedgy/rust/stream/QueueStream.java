@@ -41,10 +41,10 @@ public class QueueStream<T> implements Stream<T> {
     }
 
     public void add(T item) {
-        doEvent(() -> this.result.add(item));
+        this.doEvent(() -> this.result.add(item));
     }
 
     public void finish() {
-        doEvent(() -> this.finished = true);
+        this.doEvent(() -> this.finished = true);
     }
 }
