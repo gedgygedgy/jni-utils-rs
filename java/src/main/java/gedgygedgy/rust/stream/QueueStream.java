@@ -28,11 +28,11 @@ public class QueueStream<T> implements Stream<T> {
         }
     }
 
-    public void add(T item) {
+    private void doEvent(Runnable r) {
         Waker waker = null;
         synchronized (this.lock) {
             assert !this.finished;
-            this.result.add(item);
+            r.run();
             waker = this.waker;
         }
         if (waker != null) {
@@ -40,15 +40,11 @@ public class QueueStream<T> implements Stream<T> {
         }
     }
 
+    public void add(T item) {
+        doEvent(() -> this.result.add(item));
+    }
+
     public void finish() {
-        Waker waker = null;
-        synchronized (this.lock) {
-            assert !this.finished;
-            this.finished = true;
-            waker = this.waker;
-        }
-        if (waker != null) {
-            waker.wake();
-        }
+        doEvent(() -> this.finished = true);
     }
 }
