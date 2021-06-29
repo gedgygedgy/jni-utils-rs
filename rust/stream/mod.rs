@@ -1,12 +1,14 @@
 use crate::task::JPoll;
 use ::jni::{
-    errors::Result,
-    objects::{JMethodID, JObject},
+    errors::{Error, Result},
+    objects::{GlobalRef, JMethodID, JObject},
     signature::JavaType,
-    JNIEnv,
+    JNIEnv, JavaVM,
 };
 use futures::stream::Stream;
+use static_assertions::assert_impl_all;
 use std::{
+    convert::TryFrom,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -60,10 +62,7 @@ impl<'a: 'b, 'b> JStream<'a, 'b> {
     }
 
     // Switch the Result and Poll return value to make this easier to implement using ?.
-    fn poll_next_internal(
-        self: Pin<&mut Self>,
-        context: &mut Context,
-    ) -> Result<Poll<Option<JObject<'a>>>> {
+    fn poll_next_internal(&self, context: &mut Context) -> Result<Poll<Option<JObject<'a>>>> {
         use crate::task::waker;
         self.j_poll_next(waker(self.env, context.waker().clone())?)
     }
@@ -94,6 +93,57 @@ impl<'a: 'b, 'b> Stream for JStream<'a, 'b> {
         }
     }
 }
+
+pub struct JavaStream {
+    internal: GlobalRef,
+    vm: JavaVM,
+}
+
+impl<'a: 'b, 'b> TryFrom<JStream<'a, 'b>> for JavaStream {
+    type Error = Error;
+
+    fn try_from(stream: JStream<'a, 'b>) -> Result<Self> {
+        Ok(JavaStream {
+            internal: stream.env.new_global_ref(stream.internal)?,
+            vm: stream.env.get_java_vm()?,
+        })
+    }
+}
+
+impl ::std::ops::Deref for JavaStream {
+    type Target = GlobalRef;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
+    }
+}
+
+impl JavaStream {
+    fn poll_next_internal(
+        &self,
+        context: &mut Context<'_>,
+    ) -> Result<Poll<Option<Result<GlobalRef>>>> {
+        let guard = self.vm.attach_current_thread()?;
+        let env = &*guard;
+        let jstream = JStream::from_env(env, self.internal.as_obj())?;
+        jstream
+            .poll_next_internal(context)
+            .map(|result| result.map(|result| result.map(|obj| env.new_global_ref(obj))))
+    }
+}
+
+impl Stream for JavaStream {
+    type Item = Result<GlobalRef>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.poll_next_internal(context) {
+            Ok(result) => result,
+            Err(err) => Poll::Ready(Some(Err(err))),
+        }
+    }
+}
+
+assert_impl_all!(JavaStream: Send);
 
 struct JStreamPoll<'a: 'b, 'b> {
     internal: JObject<'a>,
@@ -281,6 +331,65 @@ mod test {
                         .unwrap());
                     assert!(env
                         .is_same_object(stream.next().await.unwrap().unwrap(), obj2)
+                        .unwrap());
+                    assert!(stream.next().await.is_none());
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn test_java_stream_await() {
+        use super::JavaStream;
+        use futures::{executor::block_on, join};
+        use std::convert::TryInto;
+
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let waker_obj = env
+            .call_static_method(
+                "gedgygedgy/rust/stream/Stream",
+                "create",
+                "()Lgedgygedgy/rust/stream/Stream$Waker;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap();
+        let stream = JStream::from_env(
+            env,
+            env.call_method(
+                waker_obj,
+                "getStream",
+                "()Lgedgygedgy/rust/stream/Stream;",
+                &[],
+            )
+            .unwrap()
+            .l()
+            .unwrap(),
+        )
+        .unwrap();
+        let mut stream: JavaStream = stream.try_into().unwrap();
+        let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+        let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+
+        block_on(async {
+            join!(
+                async {
+                    env.call_method(waker_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
+                        .unwrap();
+                    env.call_method(waker_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
+                        .unwrap();
+                    env.call_method(waker_obj, "finish", "()V", &[]).unwrap();
+                },
+                async {
+                    use futures::StreamExt;
+                    assert!(env
+                        .is_same_object(stream.next().await.unwrap().unwrap().as_obj(), obj1)
+                        .unwrap());
+                    assert!(env
+                        .is_same_object(stream.next().await.unwrap().unwrap().as_obj(), obj2)
                         .unwrap());
                     assert!(stream.next().await.is_none());
                 }
