@@ -196,36 +196,17 @@ mod test {
         assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), false);
 
-        let waker_obj = env
-            .call_static_method(
-                "gedgygedgy/rust/future/Future",
-                "create",
-                "()Lgedgygedgy/rust/future/Future$Waker;",
-                &[],
-            )
-            .unwrap()
-            .l()
+        let future_obj = env
+            .new_object("gedgygedgy/rust/future/SimpleFuture", "()V", &[])
             .unwrap();
-        let mut future = JFuture::from_env(
-            env,
-            env.call_method(
-                waker_obj,
-                "getFuture",
-                "()Lgedgygedgy/rust/future/Future;",
-                &[],
-            )
-            .unwrap()
-            .l()
-            .unwrap(),
-        )
-        .unwrap();
+        let mut future = JFuture::from_env(env, future_obj).unwrap();
 
         assert!(Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending());
         assert_eq!(Arc::strong_count(&data), 3);
         assert_eq!(*data.lock().unwrap(), false);
 
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        env.call_method(waker_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+        env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
             .unwrap();
         assert_eq!(Arc::strong_count(&data), 3);
         assert_eq!(*data.lock().unwrap(), true);
@@ -247,35 +228,16 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let waker_obj = env
-            .call_static_method(
-                "gedgygedgy/rust/future/Future",
-                "create",
-                "()Lgedgygedgy/rust/future/Future$Waker;",
-                &[],
-            )
-            .unwrap()
-            .l()
+        let future_obj = env
+            .new_object("gedgygedgy/rust/future/SimpleFuture", "()V", &[])
             .unwrap();
-        let future = JFuture::from_env(
-            env,
-            env.call_method(
-                waker_obj,
-                "getFuture",
-                "()Lgedgygedgy/rust/future/Future;",
-                &[],
-            )
-            .unwrap()
-            .l()
-            .unwrap(),
-        )
-        .unwrap();
+        let future = JFuture::from_env(env, future_obj).unwrap();
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
         block_on(async {
             join!(
                 async {
-                    env.call_method(waker_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                    env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
                         .unwrap();
                 },
                 async {
@@ -294,36 +256,17 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let waker_obj = env
-            .call_static_method(
-                "gedgygedgy/rust/future/Future",
-                "create",
-                "()Lgedgygedgy/rust/future/Future$Waker;",
-                &[],
-            )
-            .unwrap()
-            .l()
+        let future_obj = env
+            .new_object("gedgygedgy/rust/future/SimpleFuture", "()V", &[])
             .unwrap();
-        let future = JFuture::from_env(
-            env,
-            env.call_method(
-                waker_obj,
-                "getFuture",
-                "()Lgedgygedgy/rust/future/Future;",
-                &[],
-            )
-            .unwrap()
-            .l()
-            .unwrap(),
-        )
-        .unwrap();
+        let future = JFuture::from_env(env, future_obj).unwrap();
         let ex = env.new_object("java/lang/Exception", "()V", &[]).unwrap();
 
         block_on(async {
             join!(
                 async {
                     env.call_method(
-                        waker_obj,
+                        future_obj,
                         "wakeWithThrowable",
                         "(Ljava/lang/Throwable;)V",
                         &[ex.into()],
@@ -346,36 +289,17 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let waker_obj = env
-            .call_static_method(
-                "gedgygedgy/rust/future/Future",
-                "create",
-                "()Lgedgygedgy/rust/future/Future$Waker;",
-                &[],
-            )
-            .unwrap()
-            .l()
+        let future_obj = env
+            .new_object("gedgygedgy/rust/future/SimpleFuture", "()V", &[])
             .unwrap();
-        let future = JFuture::from_env(
-            env,
-            env.call_method(
-                waker_obj,
-                "getFuture",
-                "()Lgedgygedgy/rust/future/Future;",
-                &[],
-            )
-            .unwrap()
-            .l()
-            .unwrap(),
-        )
-        .unwrap();
+        let future = JFuture::from_env(env, future_obj).unwrap();
         let future: JavaFuture = future.try_into().unwrap();
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
         block_on(async {
             join!(
                 async {
-                    env.call_method(waker_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                    env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
                         .unwrap();
                 },
                 async {
