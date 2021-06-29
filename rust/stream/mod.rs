@@ -199,29 +199,10 @@ mod test {
         assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), false);
 
-        let waker_obj = env
-            .call_static_method(
-                "gedgygedgy/rust/stream/Stream",
-                "create",
-                "()Lgedgygedgy/rust/stream/Stream$Waker;",
-                &[],
-            )
-            .unwrap()
-            .l()
+        let stream_obj = env
+            .new_object("gedgygedgy/rust/stream/QueueStream", "()V", &[])
             .unwrap();
-        let mut stream = JStream::from_env(
-            env,
-            env.call_method(
-                waker_obj,
-                "getStream",
-                "()Lgedgygedgy/rust/stream/Stream;",
-                &[],
-            )
-            .unwrap()
-            .l()
-            .unwrap(),
-        )
-        .unwrap();
+        let mut stream = JStream::from_env(env, stream_obj).unwrap();
 
         assert!(Pin::new(&mut stream)
             .poll_next(&mut Context::from_waker(&waker))
@@ -230,14 +211,14 @@ mod test {
         assert_eq!(*data.lock().unwrap(), false);
 
         let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        env.call_method(waker_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
+        env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
             .unwrap();
         assert_eq!(Arc::strong_count(&data), 3);
         assert_eq!(*data.lock().unwrap(), true);
         *data.lock().unwrap() = false;
 
         let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        env.call_method(waker_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
+        env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
             .unwrap();
         assert_eq!(Arc::strong_count(&data), 3);
         assert_eq!(*data.lock().unwrap(), true);
@@ -267,7 +248,7 @@ mod test {
         assert_eq!(Arc::strong_count(&data), 6);
         assert_eq!(*data.lock().unwrap(), false);
 
-        env.call_method(waker_obj, "finish", "()V", &[]).unwrap();
+        env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
         assert_eq!(Arc::strong_count(&data), 6);
         assert_eq!(*data.lock().unwrap(), true);
         *data.lock().unwrap() = false;
@@ -288,40 +269,21 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let waker_obj = env
-            .call_static_method(
-                "gedgygedgy/rust/stream/Stream",
-                "create",
-                "()Lgedgygedgy/rust/stream/Stream$Waker;",
-                &[],
-            )
-            .unwrap()
-            .l()
+        let stream_obj = env
+            .new_object("gedgygedgy/rust/stream/QueueStream", "()V", &[])
             .unwrap();
-        let mut stream = JStream::from_env(
-            env,
-            env.call_method(
-                waker_obj,
-                "getStream",
-                "()Lgedgygedgy/rust/stream/Stream;",
-                &[],
-            )
-            .unwrap()
-            .l()
-            .unwrap(),
-        )
-        .unwrap();
+        let mut stream = JStream::from_env(env, stream_obj).unwrap();
         let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
         let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
         block_on(async {
             join!(
                 async {
-                    env.call_method(waker_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
+                    env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
                         .unwrap();
-                    env.call_method(waker_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
+                    env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
                         .unwrap();
-                    env.call_method(waker_obj, "finish", "()V", &[]).unwrap();
+                    env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
                 },
                 async {
                     use futures::StreamExt;
@@ -346,29 +308,10 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let waker_obj = env
-            .call_static_method(
-                "gedgygedgy/rust/stream/Stream",
-                "create",
-                "()Lgedgygedgy/rust/stream/Stream$Waker;",
-                &[],
-            )
-            .unwrap()
-            .l()
+        let stream_obj = env
+            .new_object("gedgygedgy/rust/stream/QueueStream", "()V", &[])
             .unwrap();
-        let stream = JStream::from_env(
-            env,
-            env.call_method(
-                waker_obj,
-                "getStream",
-                "()Lgedgygedgy/rust/stream/Stream;",
-                &[],
-            )
-            .unwrap()
-            .l()
-            .unwrap(),
-        )
-        .unwrap();
+        let stream = JStream::from_env(env, stream_obj).unwrap();
         let mut stream: JavaStream = stream.try_into().unwrap();
         let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
         let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
@@ -376,11 +319,11 @@ mod test {
         block_on(async {
             join!(
                 async {
-                    env.call_method(waker_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
+                    env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
                         .unwrap();
-                    env.call_method(waker_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
+                    env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
                         .unwrap();
-                    env.call_method(waker_obj, "finish", "()V", &[]).unwrap();
+                    env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
                 },
                 async {
                     use futures::StreamExt;
