@@ -123,9 +123,8 @@ impl JavaStream {
         &self,
         context: &mut Context<'_>,
     ) -> Result<Poll<Option<Result<GlobalRef>>>> {
-        let guard = self.vm.attach_current_thread()?;
-        let env = &*guard;
-        let jstream = JStream::from_env(env, self.internal.as_obj())?;
+        let env = self.vm.get_env()?;
+        let jstream = JStream::from_env(&env, self.internal.as_obj())?;
         jstream
             .poll_next_internal(context)
             .map(|result| result.map(|result| result.map(|obj| env.new_global_ref(obj))))

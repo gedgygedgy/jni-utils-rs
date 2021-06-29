@@ -121,9 +121,8 @@ impl JavaFuture {
         &self,
         context: &mut Context<'_>,
     ) -> Result<Poll<Result<std::result::Result<GlobalRef, GlobalRef>>>> {
-        let guard = self.vm.attach_current_thread()?;
-        let env = &*guard;
-        let jfuture = JFuture::from_env(env, self.internal.as_obj())?;
+        let env = self.vm.get_env()?;
+        let jfuture = JFuture::from_env(&env, self.internal.as_obj())?;
         jfuture.poll_internal(context).map(|result| {
             result.map(|result| match result {
                 Ok(obj) => Ok(Ok(env.new_global_ref(obj)?)),
