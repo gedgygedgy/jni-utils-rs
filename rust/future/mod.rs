@@ -1,3 +1,4 @@
+use crate::task::JPoll;
 use ::jni::{
     errors::{Error, Result},
     objects::{GlobalRef, JMethodID, JObject, JThrowable},
@@ -51,7 +52,7 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
             None
         } else {
             let poll = JPoll::from_env(self.env, result)?;
-            Some(poll.get()?)
+            Some(poll.get_with_throwable()?)
         })
     }
 
@@ -152,32 +153,10 @@ impl Future for JavaFuture {
 
 assert_impl_all!(JavaFuture: Send);
 
-pub struct JPoll<'a: 'b, 'b> {
-    internal: JObject<'a>,
-    get: JMethodID<'a>,
-    env: &'b JNIEnv<'a>,
-}
-
 impl<'a: 'b, 'b> JPoll<'a, 'b> {
-    pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
-        let class = env.auto_local(env.find_class("gedgygedgy/rust/task/Poll")?);
-
-        let get = env.get_method_id(&class, "get", "()Ljava/lang/Object;")?;
-        Ok(Self {
-            internal: obj,
-            get,
-            env,
-        })
-    }
-
-    pub fn get(&self) -> Result<std::result::Result<JObject<'a>, JThrowable<'a>>> {
-        match self.env.call_method_unchecked(
-            self.internal,
-            self.get,
-            JavaType::Object("java/lang/Object".into()),
-            &[],
-        ) {
-            Ok(result) => Ok(Ok(result.l()?)),
+    pub fn get_with_throwable(&self) -> Result<std::result::Result<JObject<'a>, JThrowable<'a>>> {
+        match self.get() {
+            Ok(result) => Ok(Ok(result)),
             Err(Error::JavaException) => {
                 let ex = self.env.exception_occurred()?;
                 self.env.exception_clear()?;

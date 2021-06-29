@@ -1,4 +1,9 @@
-use ::jni::{errors::Result, objects::JObject, JNIEnv};
+use ::jni::{
+    errors::Result,
+    objects::{JMethodID, JObject},
+    signature::JavaType,
+    JNIEnv,
+};
 use std::task::Waker;
 
 pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a>> {
@@ -7,6 +12,36 @@ pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a
     let obj = env.new_object(class, "()V", &[])?;
     env.set_rust_field(obj, "data", waker)?;
     Ok(obj)
+}
+
+pub(crate) struct JPoll<'a: 'b, 'b> {
+    pub internal: JObject<'a>,
+    pub get: JMethodID<'a>,
+    pub env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> JPoll<'a, 'b> {
+    pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
+        let class = env.auto_local(env.find_class("gedgygedgy/rust/task/Poll")?);
+
+        let get = env.get_method_id(&class, "get", "()Ljava/lang/Object;")?;
+        Ok(Self {
+            internal: obj,
+            get,
+            env,
+        })
+    }
+
+    pub fn get(&self) -> Result<JObject<'a>> {
+        self.env
+            .call_method_unchecked(
+                self.internal,
+                self.get,
+                JavaType::Object("java/lang/Object".into()),
+                &[],
+            )?
+            .l()
+    }
 }
 
 pub(crate) mod jni {
