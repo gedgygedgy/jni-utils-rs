@@ -1,6 +1,7 @@
 use ::jni::{errors::Result, JNIEnv};
 
 pub mod future;
+pub mod stream;
 pub mod task;
 pub mod uuid;
 
