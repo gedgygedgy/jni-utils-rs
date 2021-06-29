@@ -38,7 +38,7 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
     pub fn j_poll(
         &self,
         waker: JObject<'a>,
-    ) -> Result<Option<std::result::Result<JObject<'a>, JThrowable<'a>>>> {
+    ) -> Result<Poll<std::result::Result<JObject<'a>, JThrowable<'a>>>> {
         let result = self
             .env
             .call_method_unchecked(
@@ -49,10 +49,10 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
             )?
             .l()?;
         Ok(if self.env.is_same_object(result, JObject::null())? {
-            None
+            Poll::Pending
         } else {
             let poll = JPoll::from_env(self.env, result)?;
-            Some(poll.get_with_throwable()?)
+            Poll::Ready(poll.get_with_throwable()?)
         })
     }
 
@@ -62,14 +62,7 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
         context: &mut Context<'_>,
     ) -> Result<Poll<std::result::Result<JObject<'a>, JThrowable<'a>>>> {
         use crate::task::waker;
-
-        Ok(
-            if let Some(result) = self.j_poll(waker(self.env, context.waker().clone())?)? {
-                Poll::Ready(result)
-            } else {
-                Poll::Pending
-            },
-        )
+        self.j_poll(waker(self.env, context.waker().clone())?)
     }
 }
 
