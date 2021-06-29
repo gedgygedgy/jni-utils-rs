@@ -19,7 +19,7 @@ public final class Future<T> {
         }
     }
 
-    public static <U> Future.Waker<U> create() {
+    public static <U> Waker<U> create() {
         return new Waker<U>(new Future<U>());
     }
 
