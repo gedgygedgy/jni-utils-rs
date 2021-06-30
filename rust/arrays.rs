@@ -1,28 +1,36 @@
 use jni::{
     errors::Result,
-    objects::{AutoArray, ReleaseMode},
+    objects::{AutoArray, ReleaseMode, TypeArray},
     sys::{jbyte, jbyteArray, jint},
     JNIEnv,
 };
 use std::{iter::FromIterator, slice};
 
+pub unsafe fn auto_array_to_mut_slice<'a, T: TypeArray>(
+    array: &'a AutoArray<T>,
+) -> Result<&'a mut [T]> {
+    let size = array.size()? as usize;
+    let ptr = array.as_ptr();
+    Ok(slice::from_raw_parts_mut(ptr, size))
+}
+
+pub unsafe fn auto_array_to_slice<'a, T: TypeArray>(array: &'a AutoArray<T>) -> Result<&'a [T]> {
+    let size = array.size()? as usize;
+    let ptr = array.as_ptr();
+    Ok(slice::from_raw_parts(ptr, size))
+}
+
 pub fn slice_to_byte_array<'a, 'b>(env: &'a JNIEnv<'a>, slice: &'b [u8]) -> Result<jbyteArray> {
     let obj = env.new_byte_array(slice.len() as jint)?;
-    let array: AutoArray<'a, 'a, jbyte> =
-        env.get_byte_array_elements(obj, ReleaseMode::CopyBack)?;
-    let array_slice: &'a mut [jbyte] =
-        unsafe { slice::from_raw_parts_mut(array.as_ptr(), slice.len()) };
-    slice.into_iter().zip(array_slice).for_each(|(src, dest)| {
-        *dest = *src as jbyte;
-    });
+    let slice = unsafe { &*(slice as *const [u8] as *const [jbyte]) };
+    env.set_byte_array_region(obj, 0, slice)?;
     Ok(obj)
 }
 
 pub fn byte_array_to_vec<'a>(env: &'a JNIEnv<'a>, obj: jbyteArray) -> Result<Vec<u8>> {
     let array: AutoArray<'a, 'a, jbyte> =
         env.get_byte_array_elements(obj, ReleaseMode::NoCopyBack)?;
-    let array_slice: &'a [jbyte] =
-        unsafe { slice::from_raw_parts(array.as_ptr(), array.size()? as usize) };
+    let array_slice = unsafe { auto_array_to_slice(&array) }?;
     Ok(Vec::from_iter(array_slice.iter().map(|item| *item as u8)))
 }
 
