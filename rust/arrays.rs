@@ -1,10 +1,10 @@
 use jni::{
     errors::Result,
-    objects::{AutoArray, ReleaseMode, TypeArray},
+    objects::{AutoArray, TypeArray},
     sys::{jbyte, jbyteArray, jint},
     JNIEnv,
 };
-use std::{iter::FromIterator, slice};
+use std::slice;
 
 pub unsafe fn auto_array_to_mut_slice<'a, T: TypeArray>(
     array: &'a AutoArray<T>,
@@ -28,10 +28,14 @@ pub fn slice_to_byte_array<'a, 'b>(env: &'a JNIEnv<'a>, slice: &'b [u8]) -> Resu
 }
 
 pub fn byte_array_to_vec<'a>(env: &'a JNIEnv<'a>, obj: jbyteArray) -> Result<Vec<u8>> {
-    let array: AutoArray<'a, 'a, jbyte> =
-        env.get_byte_array_elements(obj, ReleaseMode::NoCopyBack)?;
-    let array_slice = unsafe { auto_array_to_slice(&array) }?;
-    Ok(Vec::from_iter(array_slice.iter().map(|item| *item as u8)))
+    let size = env.get_array_length(obj)? as usize;
+    let mut result = Vec::with_capacity(size);
+    unsafe {
+        let result_slice = slice::from_raw_parts_mut(result.as_mut_ptr() as *mut jbyte, size);
+        env.get_byte_array_region(obj, 0, result_slice)?;
+        result.set_len(size);
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
