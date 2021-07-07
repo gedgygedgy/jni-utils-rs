@@ -51,6 +51,10 @@ mod test {
     use crate::test_utils;
 
     fn test_catch<'a: 'b, 'b>(env: &'b JNIEnv<'a>, class: Option<&str>) -> Result<i32, Error> {
+        let illegal_argument_exception = env
+            .find_class("java/lang/IllegalArgumentException")
+            .unwrap();
+
         let (ex, result) = if let Some(class) = class {
             let ex: JThrowable = env.new_object(class, "()V", &[]).unwrap().into();
             env.throw(ex).unwrap();
@@ -60,28 +64,24 @@ mod test {
         };
 
         result
-            .catch(env, "java/lang/IllegalArgumentException", |caught| {
-                if let Some(ex) = ex {
-                    assert!(env.is_same_object(ex, caught).unwrap());
-                }
+            .catch(env, illegal_argument_exception, |caught| {
+                assert!(!env.exception_check().unwrap());
+                assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
                 Ok(1)
             })
             .catch(env, "java/lang/ArrayIndexOutOfBoundsException", |caught| {
-                if let Some(ex) = ex {
-                    assert!(env.is_same_object(ex, caught).unwrap());
-                }
+                assert!(!env.exception_check().unwrap());
+                assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
                 Ok(2)
             })
             .catch(env, "java/lang/IndexOutOfBoundsException", |caught| {
-                if let Some(ex) = ex {
-                    assert!(env.is_same_object(ex, caught).unwrap());
-                }
+                assert!(!env.exception_check().unwrap());
+                assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
                 Ok(3)
             })
             .catch(env, "java/lang/StringIndexOutOfBoundsException", |caught| {
-                if let Some(ex) = ex {
-                    assert!(env.is_same_object(ex, caught).unwrap());
-                }
+                assert!(!env.exception_check().unwrap());
+                assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
                 Ok(4)
             })
     }
@@ -139,6 +139,7 @@ mod test {
         if let Error::JavaException =
             test_catch(&env, Some("java/lang/SecurityException")).unwrap_err()
         {
+            assert!(env.exception_check().unwrap());
             let ex = env.exception_occurred().unwrap();
             env.exception_clear().unwrap();
             assert!(env
