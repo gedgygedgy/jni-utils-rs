@@ -19,7 +19,6 @@ pub trait Catch: Sized {
         match self.result() {
             Ok(value) => Ok(value),
             Err(err) => {
-                let err: Error = err.into();
                 if let Error::JavaException = err {
                     if env.exception_check()? {
                         let ex = env.exception_occurred()?;
@@ -30,7 +29,7 @@ pub trait Catch: Sized {
                         env.throw(ex)?;
                     }
                 }
-                Err(err.into())
+                Err(err)
             }
         }
     }
