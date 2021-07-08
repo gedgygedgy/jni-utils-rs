@@ -99,6 +99,7 @@ mod test {
         env: &'b JNIEnv<'a>,
         throw_class: Option<&str>,
         try_result: Result<i32, Error>,
+        rethrow: bool,
     ) -> Result<i32, Error> {
         let old_ex = if env.exception_check().unwrap() {
             let ex = env.exception_occurred().unwrap();
@@ -133,12 +134,21 @@ mod test {
         .catch("java/lang/ArrayIndexOutOfBoundsException", |caught| {
             assert!(!env.exception_check().unwrap());
             assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
-            Ok(2)
+            if rethrow {
+                Err(Error::JavaException)
+            } else {
+                Ok(2)
+            }
         })
         .catch("java/lang/IndexOutOfBoundsException", |caught| {
             assert!(!env.exception_check().unwrap());
             assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
-            Ok(3)
+            if rethrow {
+                env.throw(caught).unwrap();
+                Err(Error::JavaException)
+            } else {
+                Ok(3)
+            }
         })
         .catch("java/lang/StringIndexOutOfBoundsException", |caught| {
             assert!(!env.exception_check().unwrap());
@@ -157,7 +167,8 @@ mod test {
             test_catch(
                 &env,
                 Some("java/lang/IllegalArgumentException"),
-                Err(Error::JavaException)
+                Err(Error::JavaException),
+                false,
             )
             .unwrap(),
             1
@@ -174,7 +185,8 @@ mod test {
             test_catch(
                 &env,
                 Some("java/lang/ArrayIndexOutOfBoundsException"),
-                Err(Error::JavaException)
+                Err(Error::JavaException),
+                false,
             )
             .unwrap(),
             2
@@ -191,7 +203,8 @@ mod test {
             test_catch(
                 &env,
                 Some("java/lang/StringIndexOutOfBoundsException"),
-                Err(Error::JavaException)
+                Err(Error::JavaException),
+                false,
             )
             .unwrap(),
             3
@@ -204,7 +217,7 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        assert_eq!(test_catch(&env, None, Ok(0)).unwrap(), 0);
+        assert_eq!(test_catch(&env, None, Ok(0), false).unwrap(), 0);
         assert!(!env.exception_check().unwrap());
     }
 
@@ -217,6 +230,7 @@ mod test {
             &env,
             Some("java/lang/SecurityException"),
             Err(Error::JavaException),
+            false,
         )
         .unwrap_err()
         {
@@ -237,7 +251,7 @@ mod test {
         let env = &*attach_guard;
 
         if let Error::InvalidCtorReturn =
-            test_catch(env, None, Err(Error::InvalidCtorReturn)).unwrap_err()
+            test_catch(env, None, Err(Error::InvalidCtorReturn), false).unwrap_err()
         {
             assert!(!env.exception_check().unwrap());
         } else {
@@ -246,11 +260,12 @@ mod test {
     }
 
     #[test]
-    fn test_catch_bad_exception() {
+    fn test_catch_bogus_exception() {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        if let Error::JavaException = test_catch(env, None, Err(Error::JavaException)).unwrap_err()
+        if let Error::JavaException =
+            test_catch(env, None, Err(Error::JavaException), false).unwrap_err()
         {
             assert!(!env.exception_check().unwrap());
         } else {
@@ -269,11 +284,54 @@ mod test {
             .into();
         env.throw(ex).unwrap();
 
-        if let Error::JavaException = test_catch(&env, None, Ok(0)).unwrap_err() {
+        if let Error::JavaException = test_catch(&env, None, Ok(0), false).unwrap_err() {
             assert!(env.exception_check().unwrap());
             let actual_ex = env.exception_occurred().unwrap();
             env.exception_clear().unwrap();
             assert!(env.is_same_object(actual_ex, ex).unwrap());
+        } else {
+            panic!("JavaException not found");
+        }
+    }
+
+    #[test]
+    fn test_catch_rethrow() {
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        if let Error::JavaException = test_catch(
+            &env,
+            Some("java/lang/StringIndexOutOfBoundsException"),
+            Err(Error::JavaException),
+            true,
+        )
+        .unwrap_err()
+        {
+            assert!(env.exception_check().unwrap());
+            let ex = env.exception_occurred().unwrap();
+            env.exception_clear().unwrap();
+            assert!(env
+                .is_instance_of(ex, "java/lang/StringIndexOutOfBoundsException")
+                .unwrap());
+        } else {
+            panic!("JavaException not found");
+        }
+    }
+
+    #[test]
+    fn test_catch_bogus_rethrow() {
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        if let Error::JavaException = test_catch(
+            &env,
+            Some("java/lang/ArrayIndexOutOfBoundsException"),
+            Err(Error::JavaException),
+            true,
+        )
+        .unwrap_err()
+        {
+            assert!(!env.exception_check().unwrap());
         } else {
             panic!("JavaException not found");
         }
