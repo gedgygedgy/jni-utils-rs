@@ -5,41 +5,86 @@ use jni::{
     JNIEnv,
 };
 
-pub trait Catch: Sized {
-    type Output;
+pub struct TryCatchResult<'a: 'b, 'b, T> {
+    env: &'b JNIEnv<'a>,
+    try_result: Result<Result<T, Error>, Error>,
+    catch_result: Option<Result<T, Error>>,
+}
 
-    fn result(self) -> Result<Self::Output, Error>;
+pub fn try_block<'a: 'b, 'b, T>(
+    env: &'b JNIEnv<'a>,
+    block: impl FnOnce() -> Result<T, Error>,
+) -> TryCatchResult<'a, 'b, T> {
+    TryCatchResult {
+        env,
+        try_result: (|| {
+            if env.exception_check()? {
+                Err(Error::JavaException)
+            } else {
+                Ok(block())
+            }
+        })(),
+        catch_result: None,
+    }
+}
 
-    fn catch<'a: 'b, 'b>(
+impl<'a: 'b, 'b, T> TryCatchResult<'a, 'b, T> {
+    pub fn catch(
         self,
-        env: &'b JNIEnv<'a>,
         class: impl Desc<'a, JClass<'a>>,
-        block: impl FnOnce(JThrowable<'a>) -> Result<Self::Output, Error>,
-    ) -> Result<Self::Output, Error> {
-        match self.result() {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                if let Error::JavaException = err {
+        block: impl FnOnce(JThrowable<'a>) -> Result<T, Error>,
+    ) -> Self {
+        match (self.try_result, self.catch_result) {
+            (Err(e), _) => Self {
+                env: self.env,
+                try_result: Err(e),
+                catch_result: None,
+            },
+            (Ok(Ok(r)), _) => Self {
+                env: self.env,
+                try_result: Ok(Ok(r)),
+                catch_result: None,
+            },
+            (Ok(Err(e)), Some(r)) => Self {
+                env: self.env,
+                try_result: Ok(Err(e)),
+                catch_result: Some(r),
+            },
+            (Ok(Err(Error::JavaException)), None) => {
+                let env = self.env;
+                let catch_result = (|| {
                     if env.exception_check()? {
                         let ex = env.exception_occurred()?;
                         env.exception_clear()?;
                         if env.is_instance_of(ex, class)? {
-                            return block(ex);
+                            return block(ex).map(|o| Some(o));
                         }
                         env.throw(ex)?;
                     }
+                    Ok(None)
+                })()
+                .transpose();
+                Self {
+                    env,
+                    try_result: Ok(Err(Error::JavaException)),
+                    catch_result,
                 }
-                Err(err)
             }
+            (Ok(Err(e)), None) => Self {
+                env: self.env,
+                try_result: Ok(Err(e)),
+                catch_result: None,
+            },
         }
     }
-}
 
-impl<T> Catch for Result<T, Error> {
-    type Output = T;
-
-    fn result(self) -> Result<Self::Output, Error> {
-        self
+    pub fn result(self) -> Result<T, Error> {
+        match (self.try_result, self.catch_result) {
+            (Err(e), _) => Err(e),
+            (Ok(Ok(r)), _) => Ok(r),
+            (Ok(Err(_)), Some(r)) => r,
+            (Ok(Err(e)), None) => Err(e),
+        }
     }
 }
 
@@ -47,43 +92,60 @@ impl<T> Catch for Result<T, Error> {
 mod test {
     use jni::{errors::Error, objects::JThrowable, JNIEnv};
 
-    use super::Catch;
+    use super::try_block;
     use crate::test_utils;
 
-    fn test_catch<'a: 'b, 'b>(env: &'b JNIEnv<'a>, class: Option<&str>) -> Result<i32, Error> {
+    fn test_catch<'a: 'b, 'b>(
+        env: &'b JNIEnv<'a>,
+        throw_class: Option<&str>,
+        try_result: Result<i32, Error>,
+    ) -> Result<i32, Error> {
+        let old_ex = if env.exception_check().unwrap() {
+            let ex = env.exception_occurred().unwrap();
+            env.exception_clear().unwrap();
+            Some(ex)
+        } else {
+            None
+        };
         let illegal_argument_exception = env
             .find_class("java/lang/IllegalArgumentException")
             .unwrap();
-
-        let (ex, result) = if let Some(class) = class {
-            let ex: JThrowable = env.new_object(class, "()V", &[]).unwrap().into();
+        if let Some(ex) = old_ex {
             env.throw(ex).unwrap();
-            (Some(ex), Err(Error::JavaException))
-        } else {
-            (None, Ok(0))
-        };
+        }
 
-        result
-            .catch(env, illegal_argument_exception, |caught| {
-                assert!(!env.exception_check().unwrap());
-                assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
-                Ok(1)
-            })
-            .catch(env, "java/lang/ArrayIndexOutOfBoundsException", |caught| {
-                assert!(!env.exception_check().unwrap());
-                assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
-                Ok(2)
-            })
-            .catch(env, "java/lang/IndexOutOfBoundsException", |caught| {
-                assert!(!env.exception_check().unwrap());
-                assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
-                Ok(3)
-            })
-            .catch(env, "java/lang/StringIndexOutOfBoundsException", |caught| {
-                assert!(!env.exception_check().unwrap());
-                assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
-                Ok(4)
-            })
+        let ex = throw_class.map(|c| {
+            let ex: JThrowable = env.new_object(c, "()V", &[]).unwrap().into();
+            ex
+        });
+
+        try_block(env, || {
+            if let Some(t) = ex {
+                env.throw(t).unwrap();
+            }
+            try_result
+        })
+        .catch(illegal_argument_exception, |caught| {
+            assert!(!env.exception_check().unwrap());
+            assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
+            Ok(1)
+        })
+        .catch("java/lang/ArrayIndexOutOfBoundsException", |caught| {
+            assert!(!env.exception_check().unwrap());
+            assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
+            Ok(2)
+        })
+        .catch("java/lang/IndexOutOfBoundsException", |caught| {
+            assert!(!env.exception_check().unwrap());
+            assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
+            Ok(3)
+        })
+        .catch("java/lang/StringIndexOutOfBoundsException", |caught| {
+            assert!(!env.exception_check().unwrap());
+            assert!(env.is_same_object(ex.unwrap(), caught).unwrap());
+            Ok(4)
+        })
+        .result()
     }
 
     #[test]
@@ -92,7 +154,12 @@ mod test {
         let env = &*attach_guard;
 
         assert_eq!(
-            test_catch(&env, Some("java/lang/IllegalArgumentException")).unwrap(),
+            test_catch(
+                &env,
+                Some("java/lang/IllegalArgumentException"),
+                Err(Error::JavaException)
+            )
+            .unwrap(),
             1
         );
         assert!(!env.exception_check().unwrap());
@@ -104,7 +171,12 @@ mod test {
         let env = &*attach_guard;
 
         assert_eq!(
-            test_catch(&env, Some("java/lang/ArrayIndexOutOfBoundsException")).unwrap(),
+            test_catch(
+                &env,
+                Some("java/lang/ArrayIndexOutOfBoundsException"),
+                Err(Error::JavaException)
+            )
+            .unwrap(),
             2
         );
         assert!(!env.exception_check().unwrap());
@@ -116,7 +188,12 @@ mod test {
         let env = &*attach_guard;
 
         assert_eq!(
-            test_catch(&env, Some("java/lang/StringIndexOutOfBoundsException")).unwrap(),
+            test_catch(
+                &env,
+                Some("java/lang/StringIndexOutOfBoundsException"),
+                Err(Error::JavaException)
+            )
+            .unwrap(),
             3
         );
         assert!(!env.exception_check().unwrap());
@@ -127,7 +204,7 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        assert_eq!(test_catch(&env, None).unwrap(), 0);
+        assert_eq!(test_catch(&env, None, Ok(0)).unwrap(), 0);
         assert!(!env.exception_check().unwrap());
     }
 
@@ -136,8 +213,12 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        if let Error::JavaException =
-            test_catch(&env, Some("java/lang/SecurityException")).unwrap_err()
+        if let Error::JavaException = test_catch(
+            &env,
+            Some("java/lang/SecurityException"),
+            Err(Error::JavaException),
+        )
+        .unwrap_err()
         {
             assert!(env.exception_check().unwrap());
             let ex = env.exception_occurred().unwrap();
@@ -155,10 +236,10 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        if let Error::InvalidCtorReturn = Err(Error::InvalidCtorReturn)
-            .catch(env, "java/lang/Throwable", |_caught| Ok(()))
-            .unwrap_err()
+        if let Error::InvalidCtorReturn =
+            test_catch(env, None, Err(Error::InvalidCtorReturn)).unwrap_err()
         {
+            assert!(!env.exception_check().unwrap());
         } else {
             panic!("InvalidCtorReturn not found");
         }
@@ -169,10 +250,30 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        if let Error::JavaException = Err(Error::JavaException)
-            .catch(env, "java/lang/Throwable", |_caught| Ok(()))
-            .unwrap_err()
+        if let Error::JavaException = test_catch(env, None, Err(Error::JavaException)).unwrap_err()
         {
+            assert!(!env.exception_check().unwrap());
+        } else {
+            panic!("JavaException not found");
+        }
+    }
+
+    #[test]
+    fn test_catch_prior_exception() {
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let ex: JThrowable = env
+            .new_object("java/lang/IllegalArgumentException", "()V", &[])
+            .unwrap()
+            .into();
+        env.throw(ex).unwrap();
+
+        if let Error::JavaException = test_catch(&env, None, Ok(0)).unwrap_err() {
+            assert!(env.exception_check().unwrap());
+            let actual_ex = env.exception_occurred().unwrap();
+            env.exception_clear().unwrap();
+            assert!(env.is_same_object(actual_ex, ex).unwrap());
         } else {
             panic!("JavaException not found");
         }
