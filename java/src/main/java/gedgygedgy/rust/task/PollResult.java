@@ -1,5 +1,5 @@
 package gedgygedgy.rust.task;
 
-public interface Poll<T> {
+public interface PollResult<T> {
     public T get();
 }

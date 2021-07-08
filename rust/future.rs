@@ -1,7 +1,7 @@
-use crate::task::JPoll;
+use crate::task::JPollResult;
 use ::jni::{
     errors::{Error, Result},
-    objects::{GlobalRef, JMethodID, JObject, JThrowable},
+    objects::{GlobalRef, JMethodID, JObject},
     signature::JavaType,
     JNIEnv, JavaVM,
 };
@@ -26,7 +26,7 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
         let poll = env.get_method_id(
             &class,
             "poll",
-            "(Lgedgygedgy/rust/task/Waker;)Lgedgygedgy/rust/task/Poll;",
+            "(Lgedgygedgy/rust/task/Waker;)Lgedgygedgy/rust/task/PollResult;",
         )?;
         Ok(Self {
             internal: obj,
@@ -35,32 +35,26 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
         })
     }
 
-    pub fn j_poll(
-        &self,
-        waker: JObject<'a>,
-    ) -> Result<Poll<std::result::Result<JObject<'a>, JThrowable<'a>>>> {
+    pub fn j_poll(&self, waker: JObject<'a>) -> Result<Poll<JPollResult<'a, 'b>>> {
         let result = self
             .env
             .call_method_unchecked(
                 self.internal,
                 self.poll,
-                JavaType::Object("gedgygedgy/rust/task/Poll".into()),
+                JavaType::Object("gedgygedgy/rust/task/PollResult".into()),
                 &[waker.into()],
             )?
             .l()?;
         Ok(if self.env.is_same_object(result, JObject::null())? {
             Poll::Pending
         } else {
-            let poll = JPoll::from_env(self.env, result)?;
-            Poll::Ready(poll.get_with_throwable()?)
+            let poll = JPollResult::from_env(self.env, result)?;
+            Poll::Ready(poll)
         })
     }
 
     // Switch the Result and Poll return value to make this easier to implement using ?.
-    fn poll_internal(
-        &self,
-        context: &mut Context<'_>,
-    ) -> Result<Poll<std::result::Result<JObject<'a>, JThrowable<'a>>>> {
+    fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<JPollResult<'a, 'b>>> {
         use crate::task::waker;
         self.j_poll(waker(self.env, context.waker().clone())?)
     }
@@ -81,7 +75,7 @@ impl<'a: 'b, 'b> From<JFuture<'a, 'b>> for JObject<'a> {
 }
 
 impl<'a: 'b, 'b> Future for JFuture<'a, 'b> {
-    type Output = Result<std::result::Result<JObject<'a>, JThrowable<'a>>>;
+    type Output = Result<JPollResult<'a, 'b>>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         match self.poll_internal(context) {
@@ -117,23 +111,17 @@ impl ::std::ops::Deref for JavaFuture {
 }
 
 impl JavaFuture {
-    fn poll_internal(
-        &self,
-        context: &mut Context<'_>,
-    ) -> Result<Poll<Result<std::result::Result<GlobalRef, GlobalRef>>>> {
+    fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<Result<GlobalRef>>> {
         let env = self.vm.get_env()?;
         let jfuture = JFuture::from_env(&env, self.internal.as_obj())?;
-        jfuture.poll_internal(context).map(|result| {
-            result.map(|result| match result {
-                Ok(obj) => Ok(Ok(env.new_global_ref(obj)?)),
-                Err(ex) => Ok(Err(env.new_global_ref(ex)?)),
-            })
-        })
+        jfuture
+            .poll_internal(context)
+            .map(|result| result.map(|result| Ok(env.new_global_ref(result)?)))
     }
 }
 
 impl Future for JavaFuture {
-    type Output = Result<std::result::Result<GlobalRef, GlobalRef>>;
+    type Output = Result<GlobalRef>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         match self.poll_internal(context) {
@@ -145,36 +133,10 @@ impl Future for JavaFuture {
 
 assert_impl_all!(JavaFuture: Send);
 
-impl<'a: 'b, 'b> JPoll<'a, 'b> {
-    pub fn get_with_throwable(&self) -> Result<std::result::Result<JObject<'a>, JThrowable<'a>>> {
-        match self.get() {
-            Ok(result) => Ok(Ok(result)),
-            Err(Error::JavaException) => {
-                let ex = self.env.exception_occurred()?;
-                self.env.exception_clear()?;
-                if self
-                    .env
-                    .is_instance_of(ex, "gedgygedgy/rust/future/FutureException")?
-                {
-                    let cause_ex = self
-                        .env
-                        .call_method(ex, "getCause", "()Ljava/lang/Throwable;", &[])?
-                        .l()?;
-                    Ok(Err(cause_ex.into()))
-                } else {
-                    self.env.throw(ex)?;
-                    Err(Error::JavaException)
-                }
-            }
-            Err(err) => Err(err),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::{JFuture, JavaFuture};
-    use crate::test_utils;
+    use crate::{task::JPollResult, test_utils};
     use std::{
         future::Future,
         pin::Pin,
@@ -214,7 +176,7 @@ mod test {
         let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
         if let Poll::Ready(result) = poll {
             assert!(env
-                .is_same_object(result.unwrap().ok().unwrap(), obj)
+                .is_same_object(result.unwrap().get().unwrap(), obj)
                 .unwrap());
         } else {
             panic!("Poll result should be ready");
@@ -242,7 +204,7 @@ mod test {
                 },
                 async {
                     assert!(env
-                        .is_same_object(future.await.unwrap().ok().unwrap(), obj)
+                        .is_same_object(future.await.unwrap().get().unwrap(), obj)
                         .unwrap());
                 }
             );
@@ -274,7 +236,14 @@ mod test {
                     .unwrap();
                 },
                 async {
-                    let actual_ex = future.await.unwrap().err().unwrap();
+                    future.await.unwrap().get().unwrap_err();
+                    let future_ex = env.exception_occurred().unwrap();
+                    env.exception_clear().unwrap();
+                    let actual_ex = env
+                        .call_method(future_ex, "getCause", "()Ljava/lang/Throwable;", &[])
+                        .unwrap()
+                        .l()
+                        .unwrap();
                     assert!(env.is_same_object(actual_ex, ex).unwrap());
                 }
             );
@@ -303,9 +272,9 @@ mod test {
                         .unwrap();
                 },
                 async {
-                    assert!(env
-                        .is_same_object(future.await.unwrap().ok().unwrap().as_obj(), obj)
-                        .unwrap());
+                    let global_ref = future.await.unwrap();
+                    let jpoll = JPollResult::from_env(env, global_ref.as_obj()).unwrap();
+                    assert!(env.is_same_object(jpoll.get().unwrap(), obj).unwrap());
                 }
             );
         });

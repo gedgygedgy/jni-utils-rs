@@ -1,17 +1,17 @@
 package gedgygedgy.rust.future;
 
-import gedgygedgy.rust.task.Poll;
+import gedgygedgy.rust.task.PollResult;
 import gedgygedgy.rust.task.Waker;
 
 public class SimpleFuture<T> implements Future<T> {
     private Waker waker = null;
-    private Poll<T> result;
+    private PollResult<T> result;
     private final Object lock = new Object();
 
     public SimpleFuture() {}
 
     @Override
-    public Poll<T> poll(Waker waker) {
+    public PollResult<T> poll(Waker waker) {
         synchronized (this.lock) {
             if (this.result != null) {
                 return this.result;
@@ -22,7 +22,7 @@ public class SimpleFuture<T> implements Future<T> {
         }
     }
 
-    private void wakeInternal(Poll result) {
+    private void wakeInternal(PollResult<T> result) {
         Waker waker = null;
         synchronized (this.lock) {
             assert this.result == null;

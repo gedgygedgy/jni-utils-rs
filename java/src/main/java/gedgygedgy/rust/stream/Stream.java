@@ -1,8 +1,8 @@
 package gedgygedgy.rust.stream;
 
-import gedgygedgy.rust.task.Poll;
+import gedgygedgy.rust.task.PollResult;
 import gedgygedgy.rust.task.Waker;
 
 public interface Stream<T> {
-    Poll<StreamPoll<T>> pollNext(Waker waker);
+    PollResult<StreamPoll<T>> pollNext(Waker waker);
 }

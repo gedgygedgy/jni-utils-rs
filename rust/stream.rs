@@ -1,4 +1,4 @@
-use crate::task::JPoll;
+use crate::task::JPollResult;
 use ::jni::{
     errors::{Error, Result},
     objects::{GlobalRef, JMethodID, JObject},
@@ -26,7 +26,7 @@ impl<'a: 'b, 'b> JStream<'a, 'b> {
         let poll_next = env.get_method_id(
             &class,
             "pollNext",
-            "(Lgedgygedgy/rust/task/Waker;)Lgedgygedgy/rust/task/Poll;",
+            "(Lgedgygedgy/rust/task/Waker;)Lgedgygedgy/rust/task/PollResult;",
         )?;
         Ok(Self {
             internal: obj,
@@ -41,7 +41,7 @@ impl<'a: 'b, 'b> JStream<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.poll_next,
-                JavaType::Object("gedgygedgy/rust/task/Poll".into()),
+                JavaType::Object("gedgygedgy/rust/task/PollResult".to_string()),
                 &[waker.into()],
             )?
             .l()?;
@@ -49,7 +49,7 @@ impl<'a: 'b, 'b> JStream<'a, 'b> {
             Poll::Pending
         } else {
             Poll::Ready({
-                let poll = JPoll::from_env(self.env, result)?;
+                let poll = JPollResult::from_env(self.env, result)?;
                 let stream_poll_obj = poll.get()?;
                 if self.env.is_same_object(stream_poll_obj, JObject::null())? {
                     None

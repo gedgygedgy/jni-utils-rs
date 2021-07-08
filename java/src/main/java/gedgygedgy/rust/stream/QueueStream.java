@@ -1,6 +1,6 @@
 package gedgygedgy.rust.stream;
 
-import gedgygedgy.rust.task.Poll;
+import gedgygedgy.rust.task.PollResult;
 import gedgygedgy.rust.task.Waker;
 
 import java.util.LinkedList;
@@ -15,7 +15,7 @@ public class QueueStream<T> implements Stream<T> {
     public QueueStream() {}
 
     @Override
-    public Poll<StreamPoll<T>> pollNext(Waker waker) {
+    public PollResult<StreamPoll<T>> pollNext(Waker waker) {
         synchronized (this.lock) {
             if (!this.result.isEmpty()) {
                 return () -> () -> this.result.remove();

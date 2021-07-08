@@ -14,15 +14,15 @@ pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a
     Ok(obj)
 }
 
-pub(crate) struct JPoll<'a: 'b, 'b> {
+pub struct JPollResult<'a: 'b, 'b> {
     pub internal: JObject<'a>,
     pub get: JMethodID<'a>,
     pub env: &'b JNIEnv<'a>,
 }
 
-impl<'a: 'b, 'b> JPoll<'a, 'b> {
+impl<'a: 'b, 'b> JPollResult<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
-        let class = env.auto_local(env.find_class("gedgygedgy/rust/task/Poll")?);
+        let class = env.auto_local(env.find_class("gedgygedgy/rust/task/PollResult")?);
 
         let get = env.get_method_id(&class, "get", "()Ljava/lang/Object;")?;
         Ok(Self {
@@ -41,6 +41,20 @@ impl<'a: 'b, 'b> JPoll<'a, 'b> {
                 &[],
             )?
             .l()
+    }
+}
+
+impl<'a: 'b, 'b> ::std::ops::Deref for JPollResult<'a, 'b> {
+    type Target = JObject<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
+    }
+}
+
+impl<'a: 'b, 'b> From<JPollResult<'a, 'b>> for JObject<'a> {
+    fn from(other: JPollResult<'a, 'b>) -> JObject<'a> {
+        other.internal
     }
 }
 
