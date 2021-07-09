@@ -1,3 +1,44 @@
+//! # Extra Utilities for JNI in Rust
+//!
+//! This crate builds on top of the [`jni`](::jni) crate and provides
+//! higher-level concepts to more easily deal with JNI. While the
+//! [`jni`](::jni) crate implements low-level bindings to JNI,
+//! [`jni-utils`](crate) is more focused on higher-level constructs that get
+//! used frequently. Some of the features provided by [`jni-utils`](crate)
+//! include:
+//!
+//! * Asynchronous calls to Java code using the [`JFuture`](future::JFuture)
+//!   and [`JStream`](stream::JStream) types
+//! * Conversion between various commonly-used Rust types and their
+//!   corresponding Java types
+//! * Emulation of `try`/`catch` blocks with the
+//!   [`try_block`](exceptions::try_block) function
+//!
+//! The overriding principle of [`jni-utils`](crate) is that switches between
+//! Rust and Java code should be minimized, and that it is easier to call Java
+//! code from Rust than it is to call Rust code from Java. Calling Rust from
+//! Java requires creating a class with a `native` method and exporting it from
+//! Rust, either by a combination of `#[nomangle]` and `extern "C"` to export
+//! the function as a symbol in a shared library, or by calling
+//! [`JNIEnv::register_native_methods()`](::jni::JNIEnv::register_native_methods).
+//! In contrast, calling Java from Rust only requires calling
+//! [`JNIEnv::call_method()`](::jni::JNIEnv::call_method) (though you can cache
+//! the method ID and use
+//! [`JNIEnv::call_method_unchecked()`](::jni::JNIEnv::call_method_unchecked)
+//! for a performance improvement.)
+//!
+//! To that end, [`jni-utils`](crate) seeks to minimize the number of holes
+//! that must be poked through the Rust-Java boundary, and the number of
+//! `native` exported-to-Java Rust functions that must be written. In
+//! particular, the async API has been developed to minimize such exports by
+//! allowing Java code to wake an `await` without creating a new `native`
+//! function.
+//!
+//! Some features of [`jni-utils`](crate) require the accompanying Java support
+//! library, which includes some native methods. Therefore,
+//! [`jni_utils::init()`](crate::init) should be called before using
+//! [`jni-utils`](crate).
+
 use ::jni::{errors::Result, JNIEnv};
 
 pub mod arrays;
@@ -7,6 +48,12 @@ pub mod stream;
 pub mod task;
 pub mod uuid;
 
+/// Initialize [`jni-utils`](crate) by registering required native methods.
+/// This should be called before using [`jni-utils`](crate).
+///
+/// # Arguments
+///
+/// * `env` - Java environment with which to register native methods.
 pub fn init(env: &JNIEnv) -> Result<()> {
     task::jni::init(env)?;
     Ok(())
