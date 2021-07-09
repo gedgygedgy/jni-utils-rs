@@ -15,9 +15,9 @@ pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a
 }
 
 pub struct JPollResult<'a: 'b, 'b> {
-    pub internal: JObject<'a>,
-    pub get: JMethodID<'a>,
-    pub env: &'b JNIEnv<'a>,
+    internal: JObject<'a>,
+    get: JMethodID<'a>,
+    env: &'b JNIEnv<'a>,
 }
 
 impl<'a: 'b, 'b> JPollResult<'a, 'b> {
