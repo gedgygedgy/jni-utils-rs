@@ -19,6 +19,8 @@ use std::{
 ///
 /// Looks up the class and method IDs on creation rather than for every method
 /// call.
+///
+/// For a [`Send`] version of this, use [`JavaFuture`].
 pub struct JFuture<'a: 'b, 'b> {
     internal: JObject<'a>,
     poll: JMethodID<'a>,
@@ -99,6 +101,8 @@ impl<'a: 'b, 'b> Future for JFuture<'a, 'b> {
     }
 }
 
+/// [`Send`] version of [`JFuture`]. Instead of storing a [`JNIEnv`], it stores
+/// a [`JavaVM`] and calls [`JavaVM::get_env`] when [`Future::poll`] is called.
 pub struct JavaFuture {
     internal: GlobalRef,
     vm: JavaVM,
