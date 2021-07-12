@@ -13,6 +13,12 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Wrapper for [`JObject`]s that implement `gedgygedgy.rust.future.Future`.
+/// Implements [`Future`](std::future::Future) to allow asynchronous Rust code
+/// to wait for a result from Java code.
+///
+/// Looks up the class and method IDs on creation rather than for every method
+/// call.
 pub struct JFuture<'a: 'b, 'b> {
     internal: JObject<'a>,
     poll: JMethodID<'a>,
@@ -20,6 +26,13 @@ pub struct JFuture<'a: 'b, 'b> {
 }
 
 impl<'a: 'b, 'b> JFuture<'a, 'b> {
+    /// Create a [`JFuture`] from the environment and an object. This looks up
+    /// the necessary class and method IDs to call all of the methods on it so
+    /// that extra work doesn't need to be done on every method call.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj` - Object to wrap.
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("gedgygedgy/rust/future/Future")?);
 
@@ -35,7 +48,7 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
         })
     }
 
-    pub fn j_poll(&self, waker: JObject<'a>) -> Result<Poll<JPollResult<'a, 'b>>> {
+    fn j_poll(&self, waker: JObject<'a>) -> Result<Poll<JPollResult<'a, 'b>>> {
         let result = self
             .env
             .call_method_unchecked(
