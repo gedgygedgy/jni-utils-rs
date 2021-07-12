@@ -6,6 +6,16 @@ use ::jni::{
 };
 use std::task::Waker;
 
+/// Wraps the given waker in a `gedgygedgy.rust.task.Waker` object.
+///
+/// Calling this function is generally not necessary, since
+/// [`JFuture`](crate::future::JFuture) and [`JStream`](crate::stream::JStream)
+/// take care of it for you.
+///
+/// # Arguments
+///
+/// * `env` - Java environment in which to create the object.
+/// * `waker` - Waker to wrap in a Java object.
 pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a>> {
     let class = env.find_class("gedgygedgy/rust/task/Waker")?;
 
