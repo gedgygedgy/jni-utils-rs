@@ -24,6 +24,11 @@ pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a
     Ok(obj)
 }
 
+/// Wrapper for [`JObject`]s that implement `gedgygedgy.rust.task.PollResult`.
+/// Provides method to get the poll result.
+///
+/// Looks up the class and method IDs on creation rather than for every method
+/// call.
 pub struct JPollResult<'a: 'b, 'b> {
     internal: JObject<'a>,
     get: JMethodID<'a>,
@@ -31,6 +36,13 @@ pub struct JPollResult<'a: 'b, 'b> {
 }
 
 impl<'a: 'b, 'b> JPollResult<'a, 'b> {
+    /// Create a [`JPollResult`] from the environment and an object. This looks
+    /// up the necessary class and method IDs to call all of the methods on it
+    /// so that extra work doesn't need to be done on every method call.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj` - Object to wrap.
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("gedgygedgy/rust/task/PollResult")?);
 
@@ -42,6 +54,8 @@ impl<'a: 'b, 'b> JPollResult<'a, 'b> {
         })
     }
 
+    /// Gets the object associated with the [`JPollResult`] by calling
+    /// `gedgygedgy.rust.task.PollResult.get()`. Can throw an exception.
     pub fn get(&self) -> Result<JObject<'a>> {
         self.env
             .call_method_unchecked(
