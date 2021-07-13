@@ -1,5 +1,11 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
 }
 
 group = 'gedgygedgy.rust'
