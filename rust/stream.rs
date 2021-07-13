@@ -28,6 +28,14 @@ pub struct JStream<'a: 'b, 'b> {
 }
 
 impl<'a: 'b, 'b> JStream<'a, 'b> {
+    /// Create a [`JStream`] from the environment and an object. This looks
+    /// up the necessary class and method IDs to call all of the methods on it
+    /// so that extra work doesn't need to be done on every method call.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - Java environment to use.
+    /// * `obj` - Object to wrap.
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("gedgygedgy/rust/stream/Stream")?);
 
