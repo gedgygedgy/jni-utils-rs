@@ -102,6 +102,9 @@ impl<'a: 'b, 'b> Stream for JStream<'a, 'b> {
     }
 }
 
+/// [`Send`] version of [`JStream`]. Instead of storing a [`JNIEnv`], it stores
+/// a [`JavaVM`] and calls [`JavaVM::get_env`] when [`Stream::poll_next`] is
+/// called.
 pub struct JavaStream {
     internal: GlobalRef,
     vm: JavaVM,
