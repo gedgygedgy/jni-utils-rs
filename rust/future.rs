@@ -13,9 +13,10 @@ use std::{
     task::{Context, Poll},
 };
 
-/// Wrapper for [`JObject`]s that implement `gedgygedgy.rust.future.Future`.
-/// Implements [`Future`](std::future::Future) to allow asynchronous Rust code
-/// to wait for a result from Java code.
+/// Wrapper for [`JObject`]s that implement
+/// `io.github.gedgygedgy.rust.future.Future`. Implements
+/// [`Future`](std::future::Future) to allow asynchronous Rust code to wait for
+/// a result from Java code.
 ///
 /// Looks up the class and method IDs on creation rather than for every method
 /// call.
@@ -37,12 +38,12 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
     /// * `env` - Java environment to use.
     /// * `obj` - Object to wrap.
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
-        let class = env.auto_local(env.find_class("gedgygedgy/rust/future/Future")?);
+        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/future/Future")?);
 
         let poll = env.get_method_id(
             &class,
             "poll",
-            "(Lgedgygedgy/rust/task/Waker;)Lgedgygedgy/rust/task/PollResult;",
+            "(Lio/github/gedgygedgy/rust/task/Waker;)Lio/github/gedgygedgy/rust/task/PollResult;",
         )?;
         Ok(Self {
             internal: obj,
@@ -57,7 +58,7 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.poll,
-                JavaType::Object("gedgygedgy/rust/task/PollResult".into()),
+                JavaType::Object("io/github/gedgygedgy/rust/task/PollResult".into()),
                 &[waker.into()],
             )?
             .l()?;
@@ -177,7 +178,7 @@ mod test {
         assert_eq!(*data.lock().unwrap(), false);
 
         let future_obj = env
-            .new_object("gedgygedgy/rust/future/SimpleFuture", "()V", &[])
+            .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
             .unwrap();
         let mut future = JFuture::from_env(env, future_obj).unwrap();
 
@@ -209,7 +210,7 @@ mod test {
         let env = &*attach_guard;
 
         let future_obj = env
-            .new_object("gedgygedgy/rust/future/SimpleFuture", "()V", &[])
+            .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
             .unwrap();
         let future = JFuture::from_env(env, future_obj).unwrap();
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
@@ -237,7 +238,7 @@ mod test {
         let env = &*attach_guard;
 
         let future_obj = env
-            .new_object("gedgygedgy/rust/future/SimpleFuture", "()V", &[])
+            .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
             .unwrap();
         let future = JFuture::from_env(env, future_obj).unwrap();
         let ex = env.new_object("java/lang/Exception", "()V", &[]).unwrap();
@@ -277,7 +278,7 @@ mod test {
         let env = &*attach_guard;
 
         let future_obj = env
-            .new_object("gedgygedgy/rust/future/SimpleFuture", "()V", &[])
+            .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
             .unwrap();
         let future = JFuture::from_env(env, future_obj).unwrap();
         let future: JavaFuture = future.try_into().unwrap();

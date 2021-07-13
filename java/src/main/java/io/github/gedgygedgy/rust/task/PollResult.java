@@ -1,4 +1,4 @@
-package gedgygedgy.rust.task;
+package io.github.gedgygedgy.rust.task;
 
 /**
  * Represents the result of polling an async future.

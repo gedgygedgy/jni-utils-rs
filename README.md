@@ -63,6 +63,6 @@ Add this to your `build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'gedgygedgy.rust:jni-utils:0.1.0'
+    implementation 'io.github.gedgygedgy.rust:jni-utils:0.1.0'
 }
 ```

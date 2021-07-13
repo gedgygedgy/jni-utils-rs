@@ -1,4 +1,4 @@
-package gedgygedgy.rust.stream;
+package io.github.gedgygedgy.rust.stream;
 
 /**
  * Represents the result of polling an async stream.

@@ -13,9 +13,10 @@ use std::{
     task::{Context, Poll},
 };
 
-/// Wrapper for [`JObject`]s that implement `gedgygedgy.rust.stream.Stream`.
-/// Implements [`Stream`](futures::stream::Stream) to allow asynchronous Rust
-/// code to wait for items from Java code.
+/// Wrapper for [`JObject`]s that implement
+/// `io.github.gedgygedgy.rust.stream.Stream`. Implements
+/// [`Stream`](futures::stream::Stream) to allow asynchronous Rust code to wait
+/// for items from Java code.
 ///
 /// Looks up the class and method IDs on creation rather than for every method
 /// call.
@@ -37,12 +38,12 @@ impl<'a: 'b, 'b> JStream<'a, 'b> {
     /// * `env` - Java environment to use.
     /// * `obj` - Object to wrap.
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
-        let class = env.auto_local(env.find_class("gedgygedgy/rust/stream/Stream")?);
+        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/stream/Stream")?);
 
         let poll_next = env.get_method_id(
             &class,
             "pollNext",
-            "(Lgedgygedgy/rust/task/Waker;)Lgedgygedgy/rust/task/PollResult;",
+            "(Lio/github/gedgygedgy/rust/task/Waker;)Lio/github/gedgygedgy/rust/task/PollResult;",
         )?;
         Ok(Self {
             internal: obj,
@@ -57,7 +58,7 @@ impl<'a: 'b, 'b> JStream<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.poll_next,
-                JavaType::Object("gedgygedgy/rust/task/PollResult".to_string()),
+                JavaType::Object("io/github/gedgygedgy/rust/task/PollResult".to_string()),
                 &[waker.into()],
             )?
             .l()?;
@@ -171,7 +172,7 @@ struct JStreamPoll<'a: 'b, 'b> {
 
 impl<'a: 'b, 'b> JStreamPoll<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
-        let class = env.auto_local(env.find_class("gedgygedgy/rust/stream/StreamPoll")?);
+        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/stream/StreamPoll")?);
 
         let get = env.get_method_id(&class, "get", "()Ljava/lang/Object;")?;
         Ok(Self {
@@ -219,7 +220,7 @@ mod test {
         assert_eq!(*data.lock().unwrap(), false);
 
         let stream_obj = env
-            .new_object("gedgygedgy/rust/stream/QueueStream", "()V", &[])
+            .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
             .unwrap();
         let mut stream = JStream::from_env(env, stream_obj).unwrap();
 
@@ -289,7 +290,7 @@ mod test {
         let env = &*attach_guard;
 
         let stream_obj = env
-            .new_object("gedgygedgy/rust/stream/QueueStream", "()V", &[])
+            .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
             .unwrap();
         let mut stream = JStream::from_env(env, stream_obj).unwrap();
         let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
@@ -328,7 +329,7 @@ mod test {
         let env = &*attach_guard;
 
         let stream_obj = env
-            .new_object("gedgygedgy/rust/stream/QueueStream", "()V", &[])
+            .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
             .unwrap();
         let stream = JStream::from_env(env, stream_obj).unwrap();
         let mut stream: JavaStream = stream.try_into().unwrap();

@@ -1,7 +1,7 @@
-package gedgygedgy.rust.future;
+package io.github.gedgygedgy.rust.future;
 
-import gedgygedgy.rust.task.PollResult;
-import gedgygedgy.rust.task.Waker;
+import io.github.gedgygedgy.rust.task.PollResult;
+import io.github.gedgygedgy.rust.task.Waker;
 
 /**
  * Simple implementation of {@link Future} which can be woken with a result.

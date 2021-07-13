@@ -6,7 +6,7 @@ use ::jni::{
 };
 use std::task::Waker;
 
-/// Wraps the given waker in a `gedgygedgy.rust.task.Waker` object.
+/// Wraps the given waker in a `io.github.gedgygedgy.rust.task.Waker` object.
 ///
 /// Calling this function is generally not necessary, since
 /// [`JFuture`](crate::future::JFuture) and [`JStream`](crate::stream::JStream)
@@ -17,15 +17,16 @@ use std::task::Waker;
 /// * `env` - Java environment in which to create the object.
 /// * `waker` - Waker to wrap in a Java object.
 pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a>> {
-    let class = env.find_class("gedgygedgy/rust/task/Waker")?;
+    let class = env.find_class("io/github/gedgygedgy/rust/task/Waker")?;
 
     let obj = env.new_object(class, "()V", &[])?;
     env.set_rust_field(obj, "data", waker)?;
     Ok(obj)
 }
 
-/// Wrapper for [`JObject`]s that implement `gedgygedgy.rust.task.PollResult`.
-/// Provides method to get the poll result.
+/// Wrapper for [`JObject`]s that implement
+/// `io.github.gedgygedgy.rust.task.PollResult`. Provides method to get the
+/// poll result.
 ///
 /// Looks up the class and method IDs on creation rather than for every method
 /// call.
@@ -45,7 +46,7 @@ impl<'a: 'b, 'b> JPollResult<'a, 'b> {
     /// * `env` - Java environment to use.
     /// * `obj` - Object to wrap.
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
-        let class = env.auto_local(env.find_class("gedgygedgy/rust/task/PollResult")?);
+        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/task/PollResult")?);
 
         let get = env.get_method_id(&class, "get", "()Ljava/lang/Object;")?;
         Ok(Self {
@@ -56,7 +57,8 @@ impl<'a: 'b, 'b> JPollResult<'a, 'b> {
     }
 
     /// Gets the object associated with the [`JPollResult`] by calling
-    /// `gedgygedgy.rust.task.PollResult.get()`. Can throw an exception.
+    /// `io.github.gedgygedgy.rust.task.PollResult.get()`. Can throw an
+    /// exception.
     pub fn get(&self) -> Result<JObject<'a>> {
         self.env
             .call_method_unchecked(
@@ -111,7 +113,7 @@ pub(crate) mod jni {
     }
 
     pub fn init(env: &JNIEnv) -> Result<()> {
-        let class = env.find_class("gedgygedgy/rust/task/Waker")?;
+        let class = env.find_class("io/github/gedgygedgy/rust/task/Waker")?;
         env.register_native_methods(
             class,
             &[

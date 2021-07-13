@@ -1,7 +1,7 @@
-package gedgygedgy.rust.stream;
+package io.github.gedgygedgy.rust.stream;
 
-import gedgygedgy.rust.task.PollResult;
-import gedgygedgy.rust.task.Waker;
+import io.github.gedgygedgy.rust.task.PollResult;
+import io.github.gedgygedgy.rust.task.Waker;
 
 import java.util.LinkedList;
 import java.util.Queue;

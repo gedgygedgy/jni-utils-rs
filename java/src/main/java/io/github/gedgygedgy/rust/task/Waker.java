@@ -1,4 +1,4 @@
-package gedgygedgy.rust.task;
+package io.github.gedgygedgy.rust.task;
 
 /**
  * Wraps a {@code std::task::Waker} in a Java object.
