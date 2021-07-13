@@ -1,24 +1,9 @@
 use jni::{
     errors::Result,
-    objects::{AutoArray, TypeArray},
     sys::{jbyte, jbyteArray, jint},
     JNIEnv,
 };
 use std::slice;
-
-pub unsafe fn auto_array_to_mut_slice<'a, T: TypeArray>(
-    array: &'a AutoArray<T>,
-) -> Result<&'a mut [T]> {
-    let size = array.size()? as usize;
-    let ptr = array.as_ptr();
-    Ok(slice::from_raw_parts_mut(ptr, size))
-}
-
-pub unsafe fn auto_array_to_slice<'a, T: TypeArray>(array: &'a AutoArray<T>) -> Result<&'a [T]> {
-    let size = array.size()? as usize;
-    let ptr = array.as_ptr();
-    Ok(slice::from_raw_parts(ptr, size))
-}
 
 pub fn slice_to_byte_array<'a, 'b>(env: &'a JNIEnv<'a>, slice: &'b [u8]) -> Result<jbyteArray> {
     let obj = env.new_byte_array(slice.len() as jint)?;
