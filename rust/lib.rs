@@ -44,6 +44,7 @@ use ::jni::{errors::Result, JNIEnv};
 pub mod arrays;
 pub mod exceptions;
 pub mod future;
+pub mod ops;
 pub mod stream;
 pub mod task;
 pub mod uuid;
@@ -56,6 +57,7 @@ pub mod uuid;
 /// * `env` - Java environment with which to register native methods.
 pub fn init(env: &JNIEnv) -> Result<()> {
     task::jni::init(env)?;
+    ops::jni::init(env)?;
     Ok(())
 }
 
