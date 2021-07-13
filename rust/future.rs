@@ -34,6 +34,7 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
     ///
     /// # Arguments
     ///
+    /// * `env` - Java environment to use.
     /// * `obj` - Object to wrap.
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("gedgygedgy/rust/future/Future")?);
