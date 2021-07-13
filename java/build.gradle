@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
 }
 
-version = '0.1.0'
+group = 'gedgygedgy.rust'
+version = '0.1.0-SNAPSHOT'
 
 sourceCompatibility = 1.8
