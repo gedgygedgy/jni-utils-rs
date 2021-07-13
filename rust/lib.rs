@@ -134,7 +134,7 @@ pub(crate) mod test_utils {
             jni_utils_jar.pop();
             jni_utils_jar.push("java");
             jni_utils_jar.push("libs");
-            jni_utils_jar.push("jni-utils.jar");
+            jni_utils_jar.push("jni-utils-0.1.0-SNAPSHOT.jar");
 
             let jvm_args = InitArgsBuilder::new()
                 .option(&format!(
