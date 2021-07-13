@@ -5,6 +5,12 @@ use jni::{
 };
 use std::slice;
 
+/// Create a new Java byte array from the given slice.
+///
+/// # Arguments
+///
+/// * `env` - Java environment in which to create the new byte array.
+/// * `slice` - Slice to convert into a byte array.
 pub fn slice_to_byte_array<'a, 'b>(env: &'a JNIEnv<'a>, slice: &'b [u8]) -> Result<jbyteArray> {
     let obj = env.new_byte_array(slice.len() as jint)?;
     let slice = unsafe { &*(slice as *const [u8] as *const [jbyte]) };
@@ -12,6 +18,12 @@ pub fn slice_to_byte_array<'a, 'b>(env: &'a JNIEnv<'a>, slice: &'b [u8]) -> Resu
     Ok(obj)
 }
 
+/// Get a [`Vec`] of bytes from the given Java byte array.
+///
+/// # Arguments
+///
+/// * `env` - Java environment to use.
+/// * `obj` - Byte array to convert into a [`Vec`].
 pub fn byte_array_to_vec<'a>(env: &'a JNIEnv<'a>, obj: jbyteArray) -> Result<Vec<u8>> {
     let size = env.get_array_length(obj)? as usize;
     let mut result = Vec::with_capacity(size);
