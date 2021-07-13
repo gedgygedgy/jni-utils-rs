@@ -3,6 +3,7 @@ name = "jni-utils"
 version = "0.1.0"
 authors = ["Gedgy Gedgy <gedgygedgy@protonmail.com>"]
 edition = "2018"
+license = "BSD-3-Clause"
 
 [lib]
 path = "rust/lib.rs"
