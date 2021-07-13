@@ -5,12 +5,26 @@ use jni::{
     JNIEnv,
 };
 
+/// Result from [`try_block`]. This object can be chained into
+/// [`catch`](TryCatchResult::catch) calls to catch exceptions. When finished
+/// with the try/catch sequence, the result can be obtained from
+/// [`result`](TryCatchResult::result).
 pub struct TryCatchResult<'a: 'b, 'b, T> {
     env: &'b JNIEnv<'a>,
     try_result: Result<Result<T, Error>, Error>,
     catch_result: Option<Result<T, Error>>,
 }
 
+/// Attempt to execute a block of JNI code. If the code causes an exception
+/// to be thrown, it will be stored in the resulting [`TryCatchResult`] for
+/// matching with [`catch`](TryCatchResult::catch). If an exception was already
+/// being thrown before [`try_block`] is called, the given block will not be
+/// executed, nor will any of the [`catch`](TryCatchResult::catch) blocks.
+///
+/// # Arguments
+///
+/// * `env` - Java environment to use.
+/// * `block` - Block of JNI code to run.
 pub fn try_block<'a: 'b, 'b, T>(
     env: &'b JNIEnv<'a>,
     block: impl FnOnce() -> Result<T, Error>,
@@ -29,6 +43,15 @@ pub fn try_block<'a: 'b, 'b, T>(
 }
 
 impl<'a: 'b, 'b, T> TryCatchResult<'a, 'b, T> {
+    /// Attempt to catch an exception thrown by [`try_block`]. If the thrown
+    /// exception matches the given class, the block is executed. If no
+    /// exception was thrown by [`try_block`], or if the exception does not
+    /// match the given class, the block is not executed.
+    ///
+    /// # Arguments
+    ///
+    /// * `class` - Exception class to match.
+    /// * `block` - Block of JNI code to run.
     pub fn catch(
         self,
         class: impl Desc<'a, JClass<'a>>,
@@ -78,6 +101,9 @@ impl<'a: 'b, 'b, T> TryCatchResult<'a, 'b, T> {
         }
     }
 
+    /// Get the result of the try/catch sequence. If [`try_block`] succeeded,
+    /// or if one of the [`catch`](TryCatchResult::catch) calls succeeded, its
+    /// result is returned.
     pub fn result(self) -> Result<T, Error> {
         match (self.try_result, self.catch_result) {
             (Err(e), _) => Err(e),
