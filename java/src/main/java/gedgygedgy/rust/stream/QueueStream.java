@@ -6,12 +6,20 @@ import gedgygedgy.rust.task.Waker;
 import java.util.LinkedList;
 import java.util.Queue;
 
+/**
+ * Simple implementation of {@link Stream} which can be woken with items.
+ * In general, methods which create a {@link QueueStream} should return it as
+ * a {@link Stream} to keep calling code from waking it.
+ */
 public class QueueStream<T> implements Stream<T> {
     private Waker waker = null;
     private final Queue<T> result = new LinkedList<>();
     private boolean finished = false;
     private final Object lock = new Object();
 
+    /**
+     * Creates a new {@link QueueStream} object.
+     */
     public QueueStream() {}
 
     @Override
@@ -40,10 +48,22 @@ public class QueueStream<T> implements Stream<T> {
         }
     }
 
+    /**
+     * Adds a new item to the queue of items to be returned by
+     * {@link pollNext}. This can be anything, including {@code null}.
+     *
+     * @param item Item to add to the queue.
+     */
     public void add(T item) {
         this.doEvent(() -> this.result.add(item));
     }
 
+    /**
+     * Marks the queue as finished. After the queue is finished, no new items
+     * can be added. Once all existing items have been drained from the queue,
+     * the {@link PollResult} returned from {@link pollNext} will return
+     * {@code null} from its own {@link PollResult#get}.
+     */
     public void finish() {
         this.doEvent(() -> this.finished = true);
     }

@@ -13,6 +13,14 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Wrapper for [`JObject`]s that implement `gedgygedgy.rust.stream.Stream`.
+/// Implements [`Stream`](futures::stream::Stream) to allow asynchronous Rust
+/// code to wait for items from Java code.
+///
+/// Looks up the class and method IDs on creation rather than for every method
+/// call.
+///
+/// For a [`Send`] version of this, use [`JavaStream`].
 pub struct JStream<'a: 'b, 'b> {
     internal: JObject<'a>,
     poll_next: JMethodID<'a>,
@@ -35,7 +43,7 @@ impl<'a: 'b, 'b> JStream<'a, 'b> {
         })
     }
 
-    pub fn j_poll_next(&self, waker: JObject<'a>) -> Result<Poll<Option<JObject<'a>>>> {
+    fn j_poll_next(&self, waker: JObject<'a>) -> Result<Poll<Option<JObject<'a>>>> {
         let result = self
             .env
             .call_method_unchecked(
