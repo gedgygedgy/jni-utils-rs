@@ -8,6 +8,13 @@ java {
     withSourcesJar()
 }
 
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+        }
+    }
+}
+
 group = 'gedgygedgy.rust'
 version = '0.1.0-SNAPSHOT'
 
