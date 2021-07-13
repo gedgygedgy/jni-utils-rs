@@ -1,6 +1,7 @@
-use std::{env, path::PathBuf, process::Command};
+#[cfg(feature = "build-java-support")]
+fn build_java() {
+    use std::{env, path::PathBuf, process::Command};
 
-fn main() {
     let mut java_src_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     java_src_dir.push("java");
 
@@ -32,4 +33,9 @@ fn main() {
     if !result.success() {
         panic!("Gradle failed");
     }
+}
+
+fn main() {
+    #[cfg(feature = "build-java-support")]
+    build_java();
 }
