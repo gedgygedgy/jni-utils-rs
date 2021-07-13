@@ -7,6 +7,11 @@ use jni::{
 };
 use uuid::Uuid;
 
+/// Wrapper for [`JObject`]s that contain `java.util.UUID`. Provides methods
+/// to convert to and from a [`Uuid`].
+///
+/// Looks up the class and method IDs on creation rather than for every method
+/// call.
 pub struct JUuid<'a: 'b, 'b> {
     internal: JObject<'a>,
     get_least_significant_bits: JMethodID<'a>,
@@ -15,11 +20,26 @@ pub struct JUuid<'a: 'b, 'b> {
 }
 
 impl<'a: 'b, 'b> JUuid<'a, 'b> {
+    /// Create a [`JUuid`] from the environment and an object. This looks up
+    /// the necessary class and method IDs to call all of the methods on it so
+    /// that extra work doesn't need to be done on every method call.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - Java environment to use.
+    /// * `obj` - Object to wrap.
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("java/util/UUID")?);
         Self::from_env_impl(env, obj, class)
     }
 
+    /// Create a [`JUuid`] which wraps a new `java.util.UUID` created from a
+    /// given [`Uuid`].
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - Java environment to use.
+    /// * `uuid` - [`Uuid`] to convert into a `java.util.UUID`.
     pub fn new(env: &'b JNIEnv<'a>, uuid: Uuid) -> Result<Self> {
         let val = uuid.as_u128();
         let least = (val & 0xFFFFFFFFFFFFFFFF) as jlong;
@@ -30,6 +50,7 @@ impl<'a: 'b, 'b> JUuid<'a, 'b> {
         Self::from_env_impl(env, obj, class)
     }
 
+    /// Convert the `java.util.UUID` into a [`Uuid`].
     pub fn as_uuid(&self) -> Result<Uuid> {
         let least = self
             .env
