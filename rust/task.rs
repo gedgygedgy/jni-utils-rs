@@ -92,15 +92,21 @@ pub(crate) mod jni {
     fn waker_wake_impl(env: JNIEnv, obj: JObject) -> Result<()> {
         use jni::errors::Error;
 
-        let result: Result<MutexGuard<Waker>> = env.get_rust_field(obj, "data");
-        match result {
-            Ok(waker) => waker.wake_by_ref(),
-            Err(Error::NullPtr(_)) => env.throw_new(
-                "java/lang/NullPointerException",
-                "This Waker has already been finalized",
-            )?,
-            Err(_) => (),
-        }
+        let waker = {
+            let result: Result<MutexGuard<Waker>> = env.get_rust_field(obj, "data");
+            match result {
+                Ok(waker) => waker.clone(),
+                Err(Error::NullPtr(e)) => {
+                    env.throw_new(
+                        "java/lang/NullPointerException",
+                        "This Waker has already been finalized",
+                    )?;
+                    return Err(Error::NullPtr(e));
+                }
+                Err(e) => return Err(e),
+            }
+        };
+        waker.wake();
         Ok(())
     }
 
@@ -182,5 +188,66 @@ mod test {
 
         assert_eq!(Arc::strong_count(&data), 1);
         assert_eq!(*data.lock().unwrap(), true);
+    }
+
+    #[test]
+    fn test_waker_deadlock() {
+        use jni::{objects::JObject, JNIEnv};
+        use std::task::{RawWaker, RawWakerVTable, Waker};
+
+        struct DeadlockWakerData<'a: 'b, 'b> {
+            waking: bool,
+            env: &'b JNIEnv<'a>,
+            waker: JObject<'a>,
+        }
+
+        unsafe fn deadlock_waker_clone(ptr: *const ()) -> RawWaker {
+            RawWaker::new(ptr as *const (), &VTABLE)
+        }
+
+        unsafe fn deadlock_waker_wake(ptr: *const ()) {
+            deadlock_waker_wake_by_ref(ptr)
+        }
+
+        unsafe fn deadlock_waker_wake_by_ref(ptr: *const ()) {
+            let data_ptr = ptr as *mut DeadlockWakerData;
+            let data = &mut *data_ptr;
+
+            if !data.waking {
+                data.waking = true;
+                data.env
+                    .call_method(data.waker, "wake", "()V", &[])
+                    .unwrap();
+                data.waking = false;
+            }
+        }
+
+        unsafe fn deadlock_waker_drop(_ptr: *const ()) {}
+
+        const VTABLE: RawWakerVTable = RawWakerVTable::new(
+            deadlock_waker_clone,
+            deadlock_waker_wake,
+            deadlock_waker_wake_by_ref,
+            deadlock_waker_drop,
+        );
+
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let mut data = DeadlockWakerData {
+            waking: false,
+            env,
+            waker: JObject::null(),
+        };
+        let waker = unsafe {
+            Waker::from_raw(RawWaker::new(
+                &data as *const DeadlockWakerData as *const (),
+                &VTABLE,
+            ))
+        };
+        let waker_obj = super::waker(env, waker).unwrap();
+        data.waker = waker_obj.clone();
+
+        env.call_method(waker_obj, "wake", "()V", &[]).unwrap();
     }
 }
