@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["Gedgy Gedgy <gedgygedgy@protonmail.com>"]
 edition = "2018"
 license = "BSD-3-Clause"
+description = "Extra Utilities for JNI in Rust"
+readme = "README.md"
 
 [lib]
 path = "rust/lib.rs"
