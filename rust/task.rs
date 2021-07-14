@@ -93,33 +93,33 @@ impl<'a: 'b, 'b> From<JPollResult<'a, 'b>> for JObject<'a> {
 #[cfg(test)]
 mod test {
     use crate::test_utils;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     #[test]
     fn test_waker_wake() {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let data = Arc::new(Mutex::new(false));
+        let data = Arc::new(test_utils::TestWakerData::new());
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let waker = crate::test_utils::test_waker(&data);
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let jwaker = super::waker(env, waker).unwrap();
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         env.call_method(jwaker, "wake", "()V", &[]).unwrap();
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), true);
-        *data.lock().unwrap() = false;
+        assert_eq!(data.value(), true);
+        data.set_value(false);
 
         env.call_method(jwaker, "wake", "()V", &[]).unwrap();
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
     }
 
     #[test]
@@ -127,24 +127,24 @@ mod test {
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let data = Arc::new(Mutex::new(false));
+        let data = Arc::new(test_utils::TestWakerData::new());
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let waker = crate::test_utils::test_waker(&data);
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let jwaker = super::waker(env, waker).unwrap();
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         env.call_method(jwaker, "close", "()V", &[]).unwrap();
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         env.call_method(jwaker, "wake", "()V", &[]).unwrap();
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
     }
 }

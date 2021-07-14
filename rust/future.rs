@@ -164,18 +164,18 @@ mod test {
 
     #[test]
     fn test_jfuture() {
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
 
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let data = Arc::new(Mutex::new(false));
+        let data = Arc::new(test_utils::TestWakerData::new());
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let waker = test_utils::test_waker(&data);
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let future_obj = env
             .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
@@ -184,17 +184,17 @@ mod test {
 
         assert!(Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending());
         assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         assert!(Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending());
         assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
         env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
             .unwrap();
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), true);
+        assert_eq!(data.value(), true);
 
         let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
         if let Poll::Ready(result) = poll {

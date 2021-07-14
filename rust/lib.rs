@@ -79,50 +79,38 @@ pub(crate) mod test_utils {
     use lazy_static::lazy_static;
     use std::{
         sync::{Arc, Mutex},
-        task::{RawWaker, RawWakerVTable, Waker},
+        task::{Wake, Waker},
     };
 
-    pub type TestWakerData = Mutex<bool>;
+    pub struct TestWakerData(Mutex<bool>);
 
-    unsafe fn test_waker_new(data: &Arc<TestWakerData>) -> RawWaker {
-        let data_ptr = Arc::as_ptr(data);
-        Arc::increment_strong_count(data_ptr);
-        RawWaker::new(data_ptr as *const (), &VTABLE)
+    impl TestWakerData {
+        pub fn new() -> Self {
+            Self(Mutex::new(false))
+        }
+
+        pub fn value(&self) -> bool {
+            *self.0.lock().unwrap()
+        }
+
+        pub fn set_value(&self, value: bool) {
+            let mut guard = self.0.lock().unwrap();
+            *guard = value;
+        }
     }
 
-    unsafe fn test_waker_clone(ptr: *const ()) -> RawWaker {
-        let data_ptr = ptr as *const TestWakerData;
-        Arc::increment_strong_count(data_ptr);
-        RawWaker::new(data_ptr as *const (), &VTABLE)
-    }
+    impl Wake for TestWakerData {
+        fn wake(self: Arc<Self>) {
+            Self::wake_by_ref(&self);
+        }
 
-    unsafe fn test_waker_wake(ptr: *const ()) {
-        test_waker_wake_by_ref(ptr);
-        let data_ptr = ptr as *const TestWakerData;
-        Arc::decrement_strong_count(data_ptr);
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.set_value(true);
+        }
     }
-
-    unsafe fn test_waker_wake_by_ref(ptr: *const ()) {
-        let data_ptr = ptr as *const TestWakerData;
-        let data = &*data_ptr;
-        let mut lock = data.lock().unwrap();
-        *lock = true;
-    }
-
-    unsafe fn test_waker_drop(ptr: *const ()) {
-        let data_ptr = ptr as *const TestWakerData;
-        Arc::decrement_strong_count(data_ptr);
-    }
-
-    const VTABLE: RawWakerVTable = RawWakerVTable::new(
-        test_waker_clone,
-        test_waker_wake,
-        test_waker_wake_by_ref,
-        test_waker_drop,
-    );
 
     pub fn test_waker(data: &Arc<TestWakerData>) -> Waker {
-        unsafe { Waker::from_raw(test_waker_new(data)) }
+        Waker::from(data.clone())
     }
 
     lazy_static! {
@@ -151,60 +139,5 @@ pub(crate) mod test_utils {
 
             jvm
         };
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::{sync::Arc, task::Waker};
-
-    #[test]
-    fn test_raw_waker_refcount() {
-        let data = Arc::new(crate::test_utils::TestWakerData::new(false));
-        assert_eq!(Arc::strong_count(&data), 1);
-
-        let waker: Waker = crate::test_utils::test_waker(&data);
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
-
-        let waker2 = waker.clone();
-        assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(*data.lock().unwrap(), false);
-
-        std::mem::drop(waker2);
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
-
-        std::mem::drop(waker);
-        assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), false);
-    }
-
-    #[test]
-    pub fn test_raw_waker_wake() {
-        let data = Arc::new(crate::test_utils::TestWakerData::new(false));
-        assert_eq!(Arc::strong_count(&data), 1);
-
-        let waker: Waker = crate::test_utils::test_waker(&data);
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
-
-        waker.wake();
-        assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), true);
-    }
-
-    #[test]
-    pub fn test_raw_waker_wake_by_ref() {
-        let data = Arc::new(crate::test_utils::TestWakerData::new(false));
-        assert_eq!(Arc::strong_count(&data), 1);
-
-        let waker: Waker = crate::test_utils::test_waker(&data);
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
-
-        waker.wake_by_ref();
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), true);
     }
 }

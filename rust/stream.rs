@@ -206,18 +206,18 @@ mod test {
 
     #[test]
     fn test_jstream() {
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
 
         let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
         let env = &*attach_guard;
 
-        let data = Arc::new(Mutex::new(false));
+        let data = Arc::new(test_utils::TestWakerData::new());
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let waker = test_utils::test_waker(&data);
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let stream_obj = env
             .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
@@ -228,21 +228,21 @@ mod test {
             .poll_next(&mut Context::from_waker(&waker))
             .is_pending());
         assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
         env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
             .unwrap();
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), true);
-        *data.lock().unwrap() = false;
+        assert_eq!(data.value(), true);
+        data.set_value(false);
 
         let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
         env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
             .unwrap();
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
-        *data.lock().unwrap() = false;
+        assert_eq!(data.value(), false);
+        data.set_value(false);
 
         let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
         if let Poll::Ready(Some(Ok(actual_obj1))) = poll {
@@ -251,7 +251,7 @@ mod test {
             panic!("Poll result should be ready");
         }
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
         if let Poll::Ready(Some(Ok(actual_obj2))) = poll {
@@ -260,18 +260,18 @@ mod test {
             panic!("Poll result should be ready");
         }
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         assert!(Pin::new(&mut stream)
             .poll_next(&mut Context::from_waker(&waker))
             .is_pending());
         assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
 
         env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), true);
-        *data.lock().unwrap() = false;
+        assert_eq!(data.value(), true);
+        data.set_value(false);
 
         let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
         if let Poll::Ready(None) = poll {
@@ -279,7 +279,7 @@ mod test {
             panic!("Poll result should be ready");
         }
         assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(*data.lock().unwrap(), false);
+        assert_eq!(data.value(), false);
     }
 
     #[test]
