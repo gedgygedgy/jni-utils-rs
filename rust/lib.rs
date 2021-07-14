@@ -60,19 +60,6 @@ pub fn init(env: &JNIEnv) -> Result<()> {
     Ok(())
 }
 
-pub(crate) mod jni {
-    use ::jni::NativeMethod;
-    use std::ffi::c_void;
-
-    pub fn native(name: &str, sig: &str, fn_ptr: *mut c_void) -> NativeMethod {
-        NativeMethod {
-            name: name.into(),
-            sig: sig.into(),
-            fn_ptr,
-        }
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod test_utils {
     use jni::{objects::GlobalRef, JNIEnv, JavaVM};

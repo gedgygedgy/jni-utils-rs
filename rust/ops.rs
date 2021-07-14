@@ -78,8 +78,7 @@ pub fn fn_runnable<'a: 'b, 'b>(
 
 pub(crate) mod jni {
     use super::{FnOnceWrapper, FnWrapper};
-    use jni::{errors::Result, objects::JObject, JNIEnv};
-    use std::ffi::c_void;
+    use jni::{errors::Result, objects::JObject, JNIEnv, NativeMethod};
 
     extern "C" fn fn_once_run(env: JNIEnv, obj: JObject) {
         if let Ok(f) = env.take_rust_field::<_, _, FnOnceWrapper>(obj, "data") {
@@ -105,12 +104,22 @@ pub(crate) mod jni {
     }
 
     pub fn init(env: &JNIEnv) -> Result<()> {
+        use std::ffi::c_void;
+
         let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnOnceRunnable")?);
         env.register_native_methods(
             &class,
             &[
-                crate::jni::native("run", "()V", fn_once_run as *mut c_void),
-                crate::jni::native("close", "()V", fn_once_close as *mut c_void),
+                NativeMethod {
+                    name: "run".into(),
+                    sig: "()V".into(),
+                    fn_ptr: fn_once_run as *mut c_void,
+                },
+                NativeMethod {
+                    name: "close".into(),
+                    sig: "()V".into(),
+                    fn_ptr: fn_once_close as *mut c_void,
+                },
             ],
         )?;
 
@@ -118,8 +127,16 @@ pub(crate) mod jni {
         env.register_native_methods(
             &class,
             &[
-                crate::jni::native("run", "()V", fn_run as *mut c_void),
-                crate::jni::native("close", "()V", fn_close as *mut c_void),
+                NativeMethod {
+                    name: "run".into(),
+                    sig: "()V".into(),
+                    fn_ptr: fn_run as *mut c_void,
+                },
+                NativeMethod {
+                    name: "close".into(),
+                    sig: "()V".into(),
+                    fn_ptr: fn_close as *mut c_void,
+                },
             ],
         )?;
 
