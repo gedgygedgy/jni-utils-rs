@@ -1,4 +1,5 @@
 use ::jni::{errors::Result, objects::JObject, JNIEnv};
+use std::sync::Arc;
 
 struct SendSyncWrapper<T>(T);
 
@@ -40,32 +41,88 @@ pub fn fn_once_runnable<'a: 'b, 'b>(
     unsafe { fn_once_runnable_unchecked(env, f) }
 }
 
+type FnWrapper = SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>) + 'static>>;
+
+/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given [`Fn`]
+/// without checking if it is [`Send`] or [`Sync`].
+///
+/// # Safety
+///
+/// This is unsafe because it could allow non-[`Send`] or non-[`Sync`]
+/// functions to be sent to another thread. Calling code is responsible for
+/// making sure that the resulting object does not have its `run()` or
+/// `close()` methods called from any thread except the current thread.
+pub unsafe fn fn_runnable_unchecked<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>) + 'static,
+) -> Result<JObject<'a>> {
+    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>)> = Arc::from(f);
+
+    let class = env.find_class("io/github/gedgygedgy/rust/ops/FnRunnable")?;
+
+    let obj = env.new_object(class, "()V", &[])?;
+    env.set_rust_field::<_, _, FnWrapper>(obj, "data", SendSyncWrapper(arc))?;
+    Ok(obj)
+}
+
+/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given [`Fn`].
+/// The function can later be called by calling the object's `run()` method.
+/// The function can be freed without calling it by calling the object's
+/// `close()` method.
+pub fn fn_runnable<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>) + Send + Sync + 'static,
+) -> Result<JObject<'a>> {
+    unsafe { fn_runnable_unchecked(env, f) }
+}
+
 pub(crate) mod jni {
-    use super::FnOnceWrapper;
+    use super::{FnOnceWrapper, FnWrapper};
     use jni::{errors::Result, objects::JObject, JNIEnv};
     use std::ffi::c_void;
 
     extern "C" fn fn_once_run(env: JNIEnv, obj: JObject) {
-        let _ = (|| {
-            if let Ok(f) = env.take_rust_field::<_, _, FnOnceWrapper>(obj, "data") {
-                f.0(&env);
-            }
-        })();
+        if let Ok(f) = env.take_rust_field::<_, _, FnOnceWrapper>(obj, "data") {
+            f.0(&env);
+        }
     }
 
     extern "C" fn fn_once_close(env: JNIEnv, obj: JObject) {
         let _ = env.take_rust_field::<_, _, FnOnceWrapper>(obj, "data");
     }
 
+    extern "C" fn fn_run(env: JNIEnv, obj: JObject) {
+        let arc = if let Ok(f) = env.get_rust_field::<_, _, FnWrapper>(obj, "data") {
+            f.0.clone()
+        } else {
+            return;
+        };
+        arc(&env);
+    }
+
+    extern "C" fn fn_close(env: JNIEnv, obj: JObject) {
+        let _ = env.take_rust_field::<_, _, FnWrapper>(obj, "data");
+    }
+
     pub fn init(env: &JNIEnv) -> Result<()> {
-        let class = env.find_class("io/github/gedgygedgy/rust/ops/FnOnceRunnable")?;
+        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnOnceRunnable")?);
         env.register_native_methods(
-            class,
+            &class,
             &[
                 crate::jni::native("run", "()V", fn_once_run as *mut c_void),
                 crate::jni::native("close", "()V", fn_once_close as *mut c_void),
             ],
         )?;
+
+        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnable")?);
+        env.register_native_methods(
+            &class,
+            &[
+                crate::jni::native("run", "()V", fn_run as *mut c_void),
+                crate::jni::native("close", "()V", fn_close as *mut c_void),
+            ],
+        )?;
+
         Ok(())
     }
 }
@@ -82,7 +139,7 @@ mod test {
 
     fn create_test_fn<'a: 'b, 'b>() -> (
         Arc<Mutex<u32>>,
-        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>) + Send + 'static>,
+        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>) + Send + Sync + 'static>,
     ) {
         let arc = Arc::new(Mutex::new(0));
         let arc2 = arc.clone();
@@ -210,5 +267,95 @@ mod test {
 
         env.call_method(runnable, "run", "()V", &[]).unwrap();
         test_data_unchecked(&data, 1, 1);
+    }
+
+    #[test]
+    fn test_fn_run() {
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let (data, f) = create_test_fn();
+        test_data(&data, 0, 2);
+
+        let runnable = super::fn_runnable(env, f).unwrap();
+        test_data(&data, 0, 2);
+
+        env.call_method(runnable, "run", "()V", &[]).unwrap();
+        test_data(&data, 1, 2);
+
+        env.call_method(runnable, "run", "()V", &[]).unwrap();
+        test_data(&data, 2, 2);
+    }
+
+    #[test]
+    fn test_fn_close() {
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let (data, f) = create_test_fn();
+        test_data(&data, 0, 2);
+
+        let runnable = super::fn_runnable(env, f).unwrap();
+        test_data(&data, 0, 2);
+
+        env.call_method(runnable, "close", "()V", &[]).unwrap();
+        test_data(&data, 0, 1);
+
+        env.call_method(runnable, "close", "()V", &[]).unwrap();
+        test_data(&data, 0, 1);
+    }
+
+    #[test]
+    fn test_fn_run_close() {
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let (data, f) = create_test_fn();
+        test_data(&data, 0, 2);
+
+        let runnable = super::fn_runnable(env, f).unwrap();
+        test_data(&data, 0, 2);
+
+        env.call_method(runnable, "run", "()V", &[]).unwrap();
+        test_data(&data, 1, 2);
+
+        env.call_method(runnable, "close", "()V", &[]).unwrap();
+        test_data(&data, 1, 1);
+    }
+
+    #[test]
+    fn test_fn_close_run() {
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let (data, f) = create_test_fn();
+        test_data(&data, 0, 2);
+
+        let runnable = super::fn_runnable(env, f).unwrap();
+        test_data(&data, 0, 2);
+
+        env.call_method(runnable, "close", "()V", &[]).unwrap();
+        test_data(&data, 0, 1);
+
+        env.call_method(runnable, "run", "()V", &[]).unwrap();
+        test_data(&data, 0, 1);
+    }
+
+    #[test]
+    fn test_fn_unchecked_run() {
+        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
+        let env = &*attach_guard;
+
+        let (data, f) = create_test_fn_unchecked();
+        test_data_unchecked(&data, 0, 2);
+
+        let runnable = unsafe { super::fn_runnable_unchecked(env, f) }.unwrap();
+        test_data_unchecked(&data, 0, 2);
+
+        env.call_method(runnable, "run", "()V", &[]).unwrap();
+        test_data_unchecked(&data, 1, 2);
+
+        env.call_method(runnable, "run", "()V", &[]).unwrap();
+        test_data_unchecked(&data, 2, 2);
     }
 }
