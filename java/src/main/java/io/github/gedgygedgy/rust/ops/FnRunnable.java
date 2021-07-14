@@ -25,7 +25,7 @@ public final class FnRunnable implements Runnable, Closeable {
     public native void run();
 
     /**
-     * Disposes of the {@code std::ops::FnOnce} associated with this object.
+     * Disposes of the {@code std::ops::Fn} associated with this object.
      * <p>
      * This method is idempotent - if it's called twice, the second call is a
      * no-op.
