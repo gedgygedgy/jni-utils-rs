@@ -23,9 +23,9 @@ pub unsafe fn fn_once_runnable_unchecked<'a: 'b, 'b>(
 ) -> Result<JObject<'a>> {
     let boxed: Box<dyn for<'c, 'd> FnOnce(&'d JNIEnv<'c>)> = Box::from(f);
 
-    let class = env.find_class("io/github/gedgygedgy/rust/ops/FnOnceRunnable")?;
+    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnOnceRunnable")?);
 
-    let obj = env.new_object(class, "()V", &[])?;
+    let obj = env.new_object(&class, "()V", &[])?;
     env.set_rust_field::<_, _, FnOnceWrapper>(obj, "data", SendSyncWrapper(boxed))?;
     Ok(obj)
 }
@@ -58,9 +58,9 @@ pub unsafe fn fn_runnable_unchecked<'a: 'b, 'b>(
 ) -> Result<JObject<'a>> {
     let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>)> = Arc::from(f);
 
-    let class = env.find_class("io/github/gedgygedgy/rust/ops/FnRunnable")?;
+    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnable")?);
 
-    let obj = env.new_object(class, "()V", &[])?;
+    let obj = env.new_object(&class, "()V", &[])?;
     env.set_rust_field::<_, _, FnWrapper>(obj, "data", SendSyncWrapper(arc))?;
     Ok(obj)
 }
