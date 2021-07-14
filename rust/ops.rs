@@ -181,181 +181,171 @@ mod test {
 
     #[test]
     fn test_fn_once_run() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
 
-        let (data, f) = create_test_fn();
-        test_data(&data, 0, 2);
+            let runnable = super::fn_once_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
 
-        let runnable = super::fn_once_runnable(env, f).unwrap();
-        test_data(&data, 0, 2);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
 
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data(&data, 1, 1);
-
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data(&data, 1, 1);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
+        });
     }
 
     #[test]
     fn test_fn_once_close() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
 
-        let (data, f) = create_test_fn();
-        test_data(&data, 0, 2);
+            let runnable = super::fn_once_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
 
-        let runnable = super::fn_once_runnable(env, f).unwrap();
-        test_data(&data, 0, 2);
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
 
-        env.call_method(runnable, "close", "()V", &[]).unwrap();
-        test_data(&data, 0, 1);
-
-        env.call_method(runnable, "close", "()V", &[]).unwrap();
-        test_data(&data, 0, 1);
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
+        });
     }
 
     #[test]
     fn test_fn_once_run_close() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
 
-        let (data, f) = create_test_fn();
-        test_data(&data, 0, 2);
+            let runnable = super::fn_once_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
 
-        let runnable = super::fn_once_runnable(env, f).unwrap();
-        test_data(&data, 0, 2);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
 
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data(&data, 1, 1);
-
-        env.call_method(runnable, "close", "()V", &[]).unwrap();
-        test_data(&data, 1, 1);
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
+        });
     }
 
     #[test]
     fn test_fn_once_close_run() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
 
-        let (data, f) = create_test_fn();
-        test_data(&data, 0, 2);
+            let runnable = super::fn_once_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
 
-        let runnable = super::fn_once_runnable(env, f).unwrap();
-        test_data(&data, 0, 2);
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
 
-        env.call_method(runnable, "close", "()V", &[]).unwrap();
-        test_data(&data, 0, 1);
-
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data(&data, 0, 1);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
+        });
     }
 
     #[test]
     fn test_fn_once_unchecked_run() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn_unchecked();
+            test_data_unchecked(&data, 0, 2);
 
-        let (data, f) = create_test_fn_unchecked();
-        test_data_unchecked(&data, 0, 2);
+            let runnable = unsafe { super::fn_once_runnable_unchecked(env, f) }.unwrap();
+            test_data_unchecked(&data, 0, 2);
 
-        let runnable = unsafe { super::fn_once_runnable_unchecked(env, f) }.unwrap();
-        test_data_unchecked(&data, 0, 2);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data_unchecked(&data, 1, 1);
 
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data_unchecked(&data, 1, 1);
-
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data_unchecked(&data, 1, 1);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data_unchecked(&data, 1, 1);
+        });
     }
 
     #[test]
     fn test_fn_run() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
 
-        let (data, f) = create_test_fn();
-        test_data(&data, 0, 2);
+            let runnable = super::fn_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
 
-        let runnable = super::fn_runnable(env, f).unwrap();
-        test_data(&data, 0, 2);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 2);
 
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data(&data, 1, 2);
-
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data(&data, 2, 2);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 2, 2);
+        });
     }
 
     #[test]
     fn test_fn_close() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
 
-        let (data, f) = create_test_fn();
-        test_data(&data, 0, 2);
+            let runnable = super::fn_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
 
-        let runnable = super::fn_runnable(env, f).unwrap();
-        test_data(&data, 0, 2);
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
 
-        env.call_method(runnable, "close", "()V", &[]).unwrap();
-        test_data(&data, 0, 1);
-
-        env.call_method(runnable, "close", "()V", &[]).unwrap();
-        test_data(&data, 0, 1);
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
+        });
     }
 
     #[test]
     fn test_fn_run_close() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
 
-        let (data, f) = create_test_fn();
-        test_data(&data, 0, 2);
+            let runnable = super::fn_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
 
-        let runnable = super::fn_runnable(env, f).unwrap();
-        test_data(&data, 0, 2);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 2);
 
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data(&data, 1, 2);
-
-        env.call_method(runnable, "close", "()V", &[]).unwrap();
-        test_data(&data, 1, 1);
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
+        });
     }
 
     #[test]
     fn test_fn_close_run() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
 
-        let (data, f) = create_test_fn();
-        test_data(&data, 0, 2);
+            let runnable = super::fn_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
 
-        let runnable = super::fn_runnable(env, f).unwrap();
-        test_data(&data, 0, 2);
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
 
-        env.call_method(runnable, "close", "()V", &[]).unwrap();
-        test_data(&data, 0, 1);
-
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data(&data, 0, 1);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
+        });
     }
 
     #[test]
     fn test_fn_unchecked_run() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn_unchecked();
+            test_data_unchecked(&data, 0, 2);
 
-        let (data, f) = create_test_fn_unchecked();
-        test_data_unchecked(&data, 0, 2);
+            let runnable = unsafe { super::fn_runnable_unchecked(env, f) }.unwrap();
+            test_data_unchecked(&data, 0, 2);
 
-        let runnable = unsafe { super::fn_runnable_unchecked(env, f) }.unwrap();
-        test_data_unchecked(&data, 0, 2);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data_unchecked(&data, 1, 2);
 
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data_unchecked(&data, 1, 2);
-
-        env.call_method(runnable, "run", "()V", &[]).unwrap();
-        test_data_unchecked(&data, 2, 2);
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data_unchecked(&data, 2, 2);
+        });
     }
 }

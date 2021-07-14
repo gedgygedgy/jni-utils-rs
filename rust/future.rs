@@ -166,84 +166,86 @@ mod test {
     fn test_jfuture() {
         use std::sync::Arc;
 
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let data = Arc::new(test_utils::TestWakerData::new());
+            assert_eq!(Arc::strong_count(&data), 1);
+            assert_eq!(data.value(), false);
 
-        let data = Arc::new(test_utils::TestWakerData::new());
-        assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(data.value(), false);
+            let waker = test_utils::test_waker(&data);
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), false);
 
-        let waker = test_utils::test_waker(&data);
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), false);
+            let future_obj = env
+                .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
+                .unwrap();
+            let mut future = JFuture::from_env(env, future_obj).unwrap();
 
-        let future_obj = env
-            .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
-            .unwrap();
-        let mut future = JFuture::from_env(env, future_obj).unwrap();
+            assert!(
+                Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending()
+            );
+            assert_eq!(Arc::strong_count(&data), 3);
+            assert_eq!(data.value(), false);
 
-        assert!(Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending());
-        assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(data.value(), false);
+            assert!(
+                Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending()
+            );
+            assert_eq!(Arc::strong_count(&data), 3);
+            assert_eq!(data.value(), false);
 
-        assert!(Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending());
-        assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(data.value(), false);
+            let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+            env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                .unwrap();
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), true);
 
-        let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
-            .unwrap();
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), true);
+            let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
+            if let Poll::Ready(result) = poll {
+                assert!(env
+                    .is_same_object(result.unwrap().get().unwrap(), obj)
+                    .unwrap());
+            } else {
+                panic!("Poll result should be ready");
+            }
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), true);
 
-        let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
-        if let Poll::Ready(result) = poll {
-            assert!(env
-                .is_same_object(result.unwrap().get().unwrap(), obj)
-                .unwrap());
-        } else {
-            panic!("Poll result should be ready");
-        }
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), true);
-
-        let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
-        if let Poll::Ready(result) = poll {
-            assert!(env
-                .is_same_object(result.unwrap().get().unwrap(), obj)
-                .unwrap());
-        } else {
-            panic!("Poll result should be ready");
-        }
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), true);
+            let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
+            if let Poll::Ready(result) = poll {
+                assert!(env
+                    .is_same_object(result.unwrap().get().unwrap(), obj)
+                    .unwrap());
+            } else {
+                panic!("Poll result should be ready");
+            }
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), true);
+        });
     }
 
     #[test]
     fn test_jfuture_await() {
         use futures::{executor::block_on, join};
 
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let future_obj = env
+                .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
+                .unwrap();
+            let future = JFuture::from_env(env, future_obj).unwrap();
+            let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
-        let future_obj = env
-            .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
-            .unwrap();
-        let future = JFuture::from_env(env, future_obj).unwrap();
-        let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-
-        block_on(async {
-            join!(
-                async {
-                    env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
-                        .unwrap();
-                },
-                async {
-                    assert!(env
-                        .is_same_object(future.await.unwrap().get().unwrap(), obj)
-                        .unwrap());
-                }
-            );
+            block_on(async {
+                join!(
+                    async {
+                        env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                            .unwrap();
+                    },
+                    async {
+                        assert!(env
+                            .is_same_object(future.await.unwrap().get().unwrap(), obj)
+                            .unwrap());
+                    }
+                );
+            });
         });
     }
 
@@ -251,38 +253,37 @@ mod test {
     fn test_jfuture_await_throw() {
         use futures::{executor::block_on, join};
 
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let future_obj = env
+                .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
+                .unwrap();
+            let future = JFuture::from_env(env, future_obj).unwrap();
+            let ex = env.new_object("java/lang/Exception", "()V", &[]).unwrap();
 
-        let future_obj = env
-            .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
-            .unwrap();
-        let future = JFuture::from_env(env, future_obj).unwrap();
-        let ex = env.new_object("java/lang/Exception", "()V", &[]).unwrap();
-
-        block_on(async {
-            join!(
-                async {
-                    env.call_method(
-                        future_obj,
-                        "wakeWithThrowable",
-                        "(Ljava/lang/Throwable;)V",
-                        &[ex.into()],
-                    )
-                    .unwrap();
-                },
-                async {
-                    future.await.unwrap().get().unwrap_err();
-                    let future_ex = env.exception_occurred().unwrap();
-                    env.exception_clear().unwrap();
-                    let actual_ex = env
-                        .call_method(future_ex, "getCause", "()Ljava/lang/Throwable;", &[])
-                        .unwrap()
-                        .l()
+            block_on(async {
+                join!(
+                    async {
+                        env.call_method(
+                            future_obj,
+                            "wakeWithThrowable",
+                            "(Ljava/lang/Throwable;)V",
+                            &[ex.into()],
+                        )
                         .unwrap();
-                    assert!(env.is_same_object(actual_ex, ex).unwrap());
-                }
-            );
+                    },
+                    async {
+                        future.await.unwrap().get().unwrap_err();
+                        let future_ex = env.exception_occurred().unwrap();
+                        env.exception_clear().unwrap();
+                        let actual_ex = env
+                            .call_method(future_ex, "getCause", "()Ljava/lang/Throwable;", &[])
+                            .unwrap()
+                            .l()
+                            .unwrap();
+                        assert!(env.is_same_object(actual_ex, ex).unwrap());
+                    }
+                );
+            });
         });
     }
 
@@ -291,28 +292,27 @@ mod test {
         use futures::{executor::block_on, join};
         use std::convert::TryInto;
 
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let future_obj = env
+                .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
+                .unwrap();
+            let future = JFuture::from_env(env, future_obj).unwrap();
+            let future: JavaFuture = future.try_into().unwrap();
+            let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
-        let future_obj = env
-            .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
-            .unwrap();
-        let future = JFuture::from_env(env, future_obj).unwrap();
-        let future: JavaFuture = future.try_into().unwrap();
-        let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-
-        block_on(async {
-            join!(
-                async {
-                    env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
-                        .unwrap();
-                },
-                async {
-                    let global_ref = future.await.unwrap();
-                    let jpoll = JPollResult::from_env(env, global_ref.as_obj()).unwrap();
-                    assert!(env.is_same_object(jpoll.get().unwrap(), obj).unwrap());
-                }
-            );
+            block_on(async {
+                join!(
+                    async {
+                        env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
+                            .unwrap();
+                    },
+                    async {
+                        let global_ref = future.await.unwrap();
+                        let jpoll = JPollResult::from_env(env, global_ref.as_obj()).unwrap();
+                        assert!(env.is_same_object(jpoll.get().unwrap(), obj).unwrap());
+                    }
+                );
+            });
         });
     }
 }

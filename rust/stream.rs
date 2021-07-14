@@ -208,114 +208,112 @@ mod test {
     fn test_jstream() {
         use std::sync::Arc;
 
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let data = Arc::new(test_utils::TestWakerData::new());
+            assert_eq!(Arc::strong_count(&data), 1);
+            assert_eq!(data.value(), false);
 
-        let data = Arc::new(test_utils::TestWakerData::new());
-        assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(data.value(), false);
+            let waker = test_utils::test_waker(&data);
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), false);
 
-        let waker = test_utils::test_waker(&data);
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), false);
+            let stream_obj = env
+                .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
+                .unwrap();
+            let mut stream = JStream::from_env(env, stream_obj).unwrap();
 
-        let stream_obj = env
-            .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
-            .unwrap();
-        let mut stream = JStream::from_env(env, stream_obj).unwrap();
+            assert!(Pin::new(&mut stream)
+                .poll_next(&mut Context::from_waker(&waker))
+                .is_pending());
+            assert_eq!(Arc::strong_count(&data), 3);
+            assert_eq!(data.value(), false);
 
-        assert!(Pin::new(&mut stream)
-            .poll_next(&mut Context::from_waker(&waker))
-            .is_pending());
-        assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(data.value(), false);
+            let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+            env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
+                .unwrap();
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), true);
+            data.set_value(false);
 
-        let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
-            .unwrap();
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), true);
-        data.set_value(false);
+            let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+            env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
+                .unwrap();
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), false);
+            data.set_value(false);
 
-        let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
-            .unwrap();
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), false);
-        data.set_value(false);
+            let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
+            if let Poll::Ready(Some(Ok(actual_obj1))) = poll {
+                assert!(env.is_same_object(actual_obj1, obj1).unwrap());
+            } else {
+                panic!("Poll result should be ready");
+            }
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), false);
 
-        let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
-        if let Poll::Ready(Some(Ok(actual_obj1))) = poll {
-            assert!(env.is_same_object(actual_obj1, obj1).unwrap());
-        } else {
-            panic!("Poll result should be ready");
-        }
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), false);
+            let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
+            if let Poll::Ready(Some(Ok(actual_obj2))) = poll {
+                assert!(env.is_same_object(actual_obj2, obj2).unwrap());
+            } else {
+                panic!("Poll result should be ready");
+            }
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), false);
 
-        let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
-        if let Poll::Ready(Some(Ok(actual_obj2))) = poll {
-            assert!(env.is_same_object(actual_obj2, obj2).unwrap());
-        } else {
-            panic!("Poll result should be ready");
-        }
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), false);
+            assert!(Pin::new(&mut stream)
+                .poll_next(&mut Context::from_waker(&waker))
+                .is_pending());
+            assert_eq!(Arc::strong_count(&data), 3);
+            assert_eq!(data.value(), false);
 
-        assert!(Pin::new(&mut stream)
-            .poll_next(&mut Context::from_waker(&waker))
-            .is_pending());
-        assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(data.value(), false);
+            env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), true);
+            data.set_value(false);
 
-        env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), true);
-        data.set_value(false);
-
-        let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
-        if let Poll::Ready(None) = poll {
-        } else {
-            panic!("Poll result should be ready");
-        }
-        assert_eq!(Arc::strong_count(&data), 2);
-        assert_eq!(data.value(), false);
+            let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
+            if let Poll::Ready(None) = poll {
+            } else {
+                panic!("Poll result should be ready");
+            }
+            assert_eq!(Arc::strong_count(&data), 2);
+            assert_eq!(data.value(), false);
+        });
     }
 
     #[test]
     fn test_jstream_await() {
         use futures::{executor::block_on, join};
 
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let stream_obj = env
+                .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
+                .unwrap();
+            let mut stream = JStream::from_env(env, stream_obj).unwrap();
+            let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+            let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
-        let stream_obj = env
-            .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
-            .unwrap();
-        let mut stream = JStream::from_env(env, stream_obj).unwrap();
-        let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-
-        block_on(async {
-            join!(
-                async {
-                    env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
-                        .unwrap();
-                    env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
-                        .unwrap();
-                    env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
-                },
-                async {
-                    use futures::StreamExt;
-                    assert!(env
-                        .is_same_object(stream.next().await.unwrap().unwrap(), obj1)
-                        .unwrap());
-                    assert!(env
-                        .is_same_object(stream.next().await.unwrap().unwrap(), obj2)
-                        .unwrap());
-                    assert!(stream.next().await.is_none());
-                }
-            );
+            block_on(async {
+                join!(
+                    async {
+                        env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
+                            .unwrap();
+                        env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
+                            .unwrap();
+                        env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
+                    },
+                    async {
+                        use futures::StreamExt;
+                        assert!(env
+                            .is_same_object(stream.next().await.unwrap().unwrap(), obj1)
+                            .unwrap());
+                        assert!(env
+                            .is_same_object(stream.next().await.unwrap().unwrap(), obj2)
+                            .unwrap());
+                        assert!(stream.next().await.is_none());
+                    }
+                );
+            });
         });
     }
 
@@ -325,37 +323,36 @@ mod test {
         use futures::{executor::block_on, join};
         use std::convert::TryInto;
 
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            let stream_obj = env
+                .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
+                .unwrap();
+            let stream = JStream::from_env(env, stream_obj).unwrap();
+            let mut stream: JavaStream = stream.try_into().unwrap();
+            let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
+            let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
-        let stream_obj = env
-            .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
-            .unwrap();
-        let stream = JStream::from_env(env, stream_obj).unwrap();
-        let mut stream: JavaStream = stream.try_into().unwrap();
-        let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-        let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
-
-        block_on(async {
-            join!(
-                async {
-                    env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
-                        .unwrap();
-                    env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
-                        .unwrap();
-                    env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
-                },
-                async {
-                    use futures::StreamExt;
-                    assert!(env
-                        .is_same_object(stream.next().await.unwrap().unwrap().as_obj(), obj1)
-                        .unwrap());
-                    assert!(env
-                        .is_same_object(stream.next().await.unwrap().unwrap().as_obj(), obj2)
-                        .unwrap());
-                    assert!(stream.next().await.is_none());
-                }
-            );
+            block_on(async {
+                join!(
+                    async {
+                        env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
+                            .unwrap();
+                        env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
+                            .unwrap();
+                        env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
+                    },
+                    async {
+                        use futures::StreamExt;
+                        assert!(env
+                            .is_same_object(stream.next().await.unwrap().unwrap().as_obj(), obj1)
+                            .unwrap());
+                        assert!(env
+                            .is_same_object(stream.next().await.unwrap().unwrap().as_obj(), obj2)
+                            .unwrap());
+                        assert!(stream.next().await.is_none());
+                    }
+                );
+            });
         });
     }
 }

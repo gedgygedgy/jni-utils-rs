@@ -75,7 +75,7 @@ pub(crate) mod jni {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use jni::JavaVM;
+    use jni::{objects::GlobalRef, JNIEnv, JavaVM};
     use lazy_static::lazy_static;
     use std::{
         sync::{Arc, Mutex},
@@ -113,8 +113,38 @@ pub(crate) mod test_utils {
         Waker::from(data.clone())
     }
 
+    struct GlobalJVM {
+        jvm: JavaVM,
+        class_loader: GlobalRef,
+    }
+
+    thread_local! {
+        pub static JVM_ENV: JNIEnv<'static> = {
+            let env = JVM.jvm.attach_current_thread_permanently().unwrap();
+
+            let thread = env
+                .call_static_method(
+                    "java/lang/Thread",
+                    "currentThread",
+                    "()Ljava/lang/Thread;",
+                    &[],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            env.call_method(
+                thread,
+                "setContextClassLoader",
+                "(Ljava/lang/ClassLoader;)V",
+                &[JVM.class_loader.as_obj().into()]
+            ).unwrap();
+
+            env
+        }
+    }
+
     lazy_static! {
-        pub static ref JVM: JavaVM = {
+        static ref JVM: GlobalJVM = {
             use jni::InitArgsBuilder;
             use std::{env, path::PathBuf};
 
@@ -137,7 +167,29 @@ pub(crate) mod test_utils {
             let env = jvm.attach_current_thread_permanently().unwrap();
             crate::init(&env).unwrap();
 
-            jvm
+            let thread = env
+                .call_static_method(
+                    "java/lang/Thread",
+                    "currentThread",
+                    "()Ljava/lang/Thread;",
+                    &[],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            let class_loader = env
+                .call_method(
+                    thread,
+                    "getContextClassLoader",
+                    "()Ljava/lang/ClassLoader;",
+                    &[],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            let class_loader = env.new_global_ref(class_loader).unwrap();
+
+            GlobalJVM { jvm, class_loader }
         };
     }
 }

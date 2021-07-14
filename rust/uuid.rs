@@ -134,46 +134,44 @@ mod test {
 
     #[test]
     fn test_uuid_new() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            for test in TESTS {
+                let most = test.most as jlong;
+                let least = test.least as jlong;
 
-        for test in TESTS {
-            let most = test.most as jlong;
-            let least = test.least as jlong;
+                let uuid_obj = JUuid::new(env, Uuid::from_u128(test.uuid)).unwrap();
+                let obj: JObject = uuid_obj.into();
 
-            let uuid_obj = JUuid::new(env, Uuid::from_u128(test.uuid)).unwrap();
-            let obj: JObject = uuid_obj.into();
-
-            let actual_most = env
-                .call_method(obj, "getMostSignificantBits", "()J", &[])
-                .unwrap()
-                .j()
-                .unwrap();
-            let actual_least = env
-                .call_method(obj, "getLeastSignificantBits", "()J", &[])
-                .unwrap()
-                .j()
-                .unwrap();
-            assert_eq!(actual_most, most);
-            assert_eq!(actual_least, least);
-        }
+                let actual_most = env
+                    .call_method(obj, "getMostSignificantBits", "()J", &[])
+                    .unwrap()
+                    .j()
+                    .unwrap();
+                let actual_least = env
+                    .call_method(obj, "getLeastSignificantBits", "()J", &[])
+                    .unwrap()
+                    .j()
+                    .unwrap();
+                assert_eq!(actual_most, most);
+                assert_eq!(actual_least, least);
+            }
+        });
     }
 
     #[test]
     fn test_uuid_as_uuid() {
-        let attach_guard = test_utils::JVM.attach_current_thread().unwrap();
-        let env = &*attach_guard;
+        test_utils::JVM_ENV.with(|env| {
+            for test in TESTS {
+                let most = test.most as jlong;
+                let least = test.least as jlong;
 
-        for test in TESTS {
-            let most = test.most as jlong;
-            let least = test.least as jlong;
+                let obj = env
+                    .new_object("java/util/UUID", "(JJ)V", &[most.into(), least.into()])
+                    .unwrap();
+                let uuid_obj = JUuid::from_env(env, obj).unwrap();
 
-            let obj = env
-                .new_object("java/util/UUID", "(JJ)V", &[most.into(), least.into()])
-                .unwrap();
-            let uuid_obj = JUuid::from_env(env, obj).unwrap();
-
-            assert_eq!(uuid_obj.as_uuid().unwrap(), Uuid::from_u128(test.uuid));
-        }
+                assert_eq!(uuid_obj.as_uuid().unwrap(), Uuid::from_u128(test.uuid));
+            }
+        });
     }
 }
