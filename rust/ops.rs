@@ -331,6 +331,18 @@ mod test {
                 .result()
                 .unwrap();
                 assert!(value);
+
+                let value = crate::exceptions::try_block(env, || {
+                    env.call_method(runnable.as_obj(), "close", "()V", &[])?;
+                    Ok(false)
+                })
+                .catch(
+                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                    |_ex| Ok(true),
+                )
+                .result()
+                .unwrap();
+                assert!(value);
             })
             .unwrap();
 
@@ -467,6 +479,18 @@ mod test {
             let runnable = super::fn_runnable(env, move |env| {
                 let value = crate::exceptions::try_block(env, || {
                     env.call_method(runnable.as_obj(), "run", "()V", &[])?;
+                    Ok(false)
+                })
+                .catch(
+                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                    |_ex| Ok(true),
+                )
+                .result()
+                .unwrap();
+                assert!(value);
+
+                let value = crate::exceptions::try_block(env, || {
+                    env.call_method(runnable.as_obj(), "close", "()V", &[])?;
                     Ok(false)
                 })
                 .catch(
