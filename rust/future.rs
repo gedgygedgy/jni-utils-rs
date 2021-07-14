@@ -204,6 +204,19 @@ mod test {
         } else {
             panic!("Poll result should be ready");
         }
+        assert_eq!(Arc::strong_count(&data), 2);
+        assert_eq!(data.value(), true);
+
+        let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));
+        if let Poll::Ready(result) = poll {
+            assert!(env
+                .is_same_object(result.unwrap().get().unwrap(), obj)
+                .unwrap());
+        } else {
+            panic!("Poll result should be ready");
+        }
+        assert_eq!(Arc::strong_count(&data), 2);
+        assert_eq!(data.value(), true);
     }
 
     #[test]
