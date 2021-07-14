@@ -20,14 +20,23 @@ public class SimpleFuture<T> implements Future<T> {
 
     @Override
     public PollResult<T> poll(Waker waker) {
+        PollResult<T> result = null;
+        Waker oldWaker = null;
         synchronized (this.lock) {
             if (this.result != null) {
-                return this.result;
+                result = this.result;
             } else {
+                oldWaker = this.waker;
                 this.waker = waker;
-                return null;
             }
         }
+        if (oldWaker != null) {
+            oldWaker.close();
+        }
+        if (result != null) {
+            waker.close();
+        }
+        return result;
     }
 
     private void wakeInternal(PollResult<T> result) {

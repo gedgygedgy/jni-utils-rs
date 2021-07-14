@@ -233,15 +233,15 @@ mod test {
         let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
         env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj1.into()])
             .unwrap();
-        assert_eq!(Arc::strong_count(&data), 3);
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), true);
         *data.lock().unwrap() = false;
 
         let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
         env.call_method(stream_obj, "add", "(Ljava/lang/Object;)V", &[obj2.into()])
             .unwrap();
-        assert_eq!(Arc::strong_count(&data), 3);
-        assert_eq!(*data.lock().unwrap(), true);
+        assert_eq!(Arc::strong_count(&data), 2);
+        assert_eq!(*data.lock().unwrap(), false);
         *data.lock().unwrap() = false;
 
         let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
@@ -250,7 +250,7 @@ mod test {
         } else {
             panic!("Poll result should be ready");
         }
-        assert_eq!(Arc::strong_count(&data), 4);
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), false);
 
         let poll = Pin::new(&mut stream).poll_next(&mut Context::from_waker(&waker));
@@ -259,17 +259,17 @@ mod test {
         } else {
             panic!("Poll result should be ready");
         }
-        assert_eq!(Arc::strong_count(&data), 5);
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), false);
 
         assert!(Pin::new(&mut stream)
             .poll_next(&mut Context::from_waker(&waker))
             .is_pending());
-        assert_eq!(Arc::strong_count(&data), 6);
+        assert_eq!(Arc::strong_count(&data), 3);
         assert_eq!(*data.lock().unwrap(), false);
 
         env.call_method(stream_obj, "finish", "()V", &[]).unwrap();
-        assert_eq!(Arc::strong_count(&data), 6);
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), true);
         *data.lock().unwrap() = false;
 
@@ -278,7 +278,7 @@ mod test {
         } else {
             panic!("Poll result should be ready");
         }
-        assert_eq!(Arc::strong_count(&data), 7);
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), false);
     }
 

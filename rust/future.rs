@@ -186,10 +186,14 @@ mod test {
         assert_eq!(Arc::strong_count(&data), 3);
         assert_eq!(*data.lock().unwrap(), false);
 
+        assert!(Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending());
+        assert_eq!(Arc::strong_count(&data), 3);
+        assert_eq!(*data.lock().unwrap(), false);
+
         let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
         env.call_method(future_obj, "wake", "(Ljava/lang/Object;)V", &[obj.into()])
             .unwrap();
-        assert_eq!(Arc::strong_count(&data), 3);
+        assert_eq!(Arc::strong_count(&data), 2);
         assert_eq!(*data.lock().unwrap(), true);
 
         let poll = Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker));

@@ -1,5 +1,9 @@
 package io.github.gedgygedgy.rust.task;
 
+import io.github.gedgygedgy.rust.ops.FnOnceRunnable;
+
+import java.io.Closeable;
+
 /**
  * Wraps a {@code std::task::Waker} in a Java object.
  * <p>
@@ -9,20 +13,28 @@ package io.github.gedgygedgy.rust.task;
  * {@code jni_utils::future::JFuture} and {@code jni_utils::stream::JStream}
  * take care of this for you.)
  */
-public final class Waker {
-    private long data;
+public final class Waker implements Closeable {
+    private final FnOnceRunnable wakeRunnable;
 
-    private Waker() {}
+    private Waker(FnOnceRunnable wakeRunnable) {
+        this.wakeRunnable = wakeRunnable;
+    }
 
     /**
      * Wakes the {@code std::task::Waker} associated with this object.
+     * <p>
+     * If the {@code std::task::Waker} has already been woken, this method
+     * does nothing.
      */
-    public native void wake();
+    public void wake() {
+        this.wakeRunnable.run();
+    }
 
     /**
      * Frees the {@code std::task::Waker} associated with this object.
      */
     @Override
-    @SuppressWarnings("deprecation") // We want finalize() to clean up the memory.
-    protected native void finalize();
+    public void close() {
+        this.wakeRunnable.close();
+    }
 }

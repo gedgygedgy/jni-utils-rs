@@ -24,16 +24,25 @@ public class QueueStream<T> implements Stream<T> {
 
     @Override
     public PollResult<StreamPoll<T>> pollNext(Waker waker) {
+        PollResult<StreamPoll<T>> result = null;
+        Waker oldWaker = null;
         synchronized (this.lock) {
             if (!this.result.isEmpty()) {
-                return () -> () -> this.result.remove();
+                result = () -> () -> this.result.remove();
+            } else if (this.finished) {
+                result = () -> null;
+            } else {
+                oldWaker = this.waker;
+                this.waker = waker;
             }
-            if (this.finished) {
-                return () -> null;
-            }
-            this.waker = waker;
-            return null;
         }
+        if (oldWaker != null) {
+            oldWaker.close();
+        }
+        if (result != null) {
+            waker.close();
+        }
+        return result;
     }
 
     private void doEvent(Runnable r) {

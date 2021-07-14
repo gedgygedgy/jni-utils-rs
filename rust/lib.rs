@@ -56,7 +56,6 @@ pub mod uuid;
 ///
 /// * `env` - Java environment with which to register native methods.
 pub fn init(env: &JNIEnv) -> Result<()> {
-    task::jni::init(env)?;
     ops::jni::init(env)?;
     Ok(())
 }
