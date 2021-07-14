@@ -62,6 +62,7 @@ impl<'a: 'b, 'b> JStream<'a, 'b> {
                 &[waker.into()],
             )?
             .l()?;
+        let _auto_local = self.env.auto_local(result);
         Ok(if self.env.is_same_object(result, JObject::null())? {
             Poll::Pending
         } else {

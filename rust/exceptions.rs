@@ -78,6 +78,7 @@ impl<'a: 'b, 'b, T> TryCatchResult<'a, 'b, T> {
                 let catch_result = (|| {
                     if env.exception_check()? {
                         let ex = env.exception_occurred()?;
+                        let _auto_local = env.auto_local(ex.clone());
                         env.exception_clear()?;
                         if env.is_instance_of(ex, class)? {
                             return block(ex).map(|o| Some(o));
