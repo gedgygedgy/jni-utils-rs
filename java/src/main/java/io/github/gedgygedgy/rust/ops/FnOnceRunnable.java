@@ -1,5 +1,7 @@
 package io.github.gedgygedgy.rust.ops;
 
+import io.github.gedgygedgy.rust.thread.LocalThreadChecker;
+
 import java.io.Closeable;
 
 /**
@@ -10,9 +12,12 @@ import java.io.Closeable;
  * instance of this class.
  */
 public final class FnOnceRunnable implements Runnable, Closeable {
+    private final LocalThreadChecker threadChecker;
     private long data;
 
-    private FnOnceRunnable() {}
+    private FnOnceRunnable(boolean local) {
+        this.threadChecker = new LocalThreadChecker(local);
+    }
 
     /**
      * Runs the {@code std::ops::FnOnce} associated with this object.
@@ -22,7 +27,12 @@ public final class FnOnceRunnable implements Runnable, Closeable {
      * method is a no-op.
      */
     @Override
-    public native void run();
+    public void run() {
+        this.threadChecker.check();
+        this.runInternal();
+    }
+
+    private native void runInternal();
 
     /**
      * Disposes of the {@code std::ops::FnOnce} associated with this object.
@@ -32,5 +42,10 @@ public final class FnOnceRunnable implements Runnable, Closeable {
      * is a no-op.
      */
     @Override
-    public native void close();
+    public void close() {
+        this.threadChecker.check();
+        this.closeInternal();
+    }
+
+    private native void closeInternal();
 }
