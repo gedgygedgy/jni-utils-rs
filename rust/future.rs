@@ -21,7 +21,7 @@ use std::{
 /// Looks up the class and method IDs on creation rather than for every method
 /// call.
 ///
-/// For a [`Send`] version of this, use [`JavaFuture`].
+/// For a [`Send`] version of this, use [`JSendFuture`].
 pub struct JFuture<'a: 'b, 'b> {
     internal: JObject<'a>,
     poll: JMethodID<'a>,
@@ -52,7 +52,13 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
         })
     }
 
-    fn j_poll(&self, waker: JObject<'a>) -> Result<Poll<JPollResult<'a, 'b>>> {
+    /// Get the `io.github.gedgygedgy.rust.task.PollResult` from this future.
+    /// Returns `null` if the future is not ready yet.
+    ///
+    /// # Arguments
+    ///
+    /// * `waker` - Waker object to wake later on if the result is not ready.
+    pub fn poll(&self, waker: JObject<'a>) -> Result<JPollResult<'a, 'b>> {
         let result = self
             .env
             .call_method_unchecked(
@@ -62,18 +68,12 @@ impl<'a: 'b, 'b> JFuture<'a, 'b> {
                 &[waker.into()],
             )?
             .l()?;
-        Ok(if self.env.is_same_object(result, JObject::null())? {
-            Poll::Pending
-        } else {
-            let poll = JPollResult::from_env(self.env, result)?;
-            Poll::Ready(poll)
-        })
+        JPollResult::from_env(self.env, result)
     }
 
-    // Switch the Result and Poll return value to make this easier to implement using ?.
-    fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<JPollResult<'a, 'b>>> {
-        use crate::task::waker;
-        self.j_poll(waker(self.env, context.waker().clone())?)
+    /// Turn the [`JFuture`] into a [`Future`] that can be `await`ed on.
+    pub fn into_future(self) -> JFutureIntoFuture<'a, 'b> {
+        JFutureIntoFuture(self)
     }
 }
 
@@ -91,7 +91,26 @@ impl<'a: 'b, 'b> From<JFuture<'a, 'b>> for JObject<'a> {
     }
 }
 
-impl<'a: 'b, 'b> Future for JFuture<'a, 'b> {
+/// Result of calling [`JFuture::into_future`]. This object can be `await`ed
+/// to get a [`JPollResult`].
+pub struct JFutureIntoFuture<'a: 'b, 'b>(JFuture<'a, 'b>);
+
+impl<'a: 'b, 'b> JFutureIntoFuture<'a, 'b> {
+    // Switch the Result and Poll return value to make this easier to implement using ?.
+    fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<JPollResult<'a, 'b>>> {
+        use crate::task::waker;
+        let result = self.0.poll(waker(self.0.env, context.waker().clone())?)?;
+        Ok(
+            if self.0.env.is_same_object(result.clone(), JObject::null())? {
+                Poll::Pending
+            } else {
+                Poll::Ready(result)
+            },
+        )
+    }
+}
+
+impl<'a: 'b, 'b> Future for JFutureIntoFuture<'a, 'b> {
     type Output = Result<JPollResult<'a, 'b>>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
@@ -103,25 +122,39 @@ impl<'a: 'b, 'b> Future for JFuture<'a, 'b> {
     }
 }
 
+impl<'a: 'b, 'b> From<JFutureIntoFuture<'a, 'b>> for JFuture<'a, 'b> {
+    fn from(fut: JFutureIntoFuture<'a, 'b>) -> Self {
+        fut.0
+    }
+}
+
+impl<'a: 'b, 'b> std::ops::Deref for JFutureIntoFuture<'a, 'b> {
+    type Target = JFuture<'a, 'b>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// [`Send`] version of [`JFuture`]. Instead of storing a [`JNIEnv`], it stores
 /// a [`JavaVM`] and calls [`JavaVM::get_env`] when [`Future::poll`] is called.
-pub struct JavaFuture {
+pub struct JSendFuture {
     internal: GlobalRef,
     vm: JavaVM,
 }
 
-impl<'a: 'b, 'b> TryFrom<JFuture<'a, 'b>> for JavaFuture {
+impl<'a: 'b, 'b> TryFrom<JFuture<'a, 'b>> for JSendFuture {
     type Error = Error;
 
     fn try_from(future: JFuture<'a, 'b>) -> Result<Self> {
-        Ok(JavaFuture {
+        Ok(Self {
             internal: future.env.new_global_ref(future.internal)?,
             vm: future.env.get_java_vm()?,
         })
     }
 }
 
-impl ::std::ops::Deref for JavaFuture {
+impl ::std::ops::Deref for JSendFuture {
     type Target = GlobalRef;
 
     fn deref(&self) -> &Self::Target {
@@ -129,17 +162,17 @@ impl ::std::ops::Deref for JavaFuture {
     }
 }
 
-impl JavaFuture {
+impl JSendFuture {
     fn poll_internal(&self, context: &mut Context<'_>) -> Result<Poll<Result<GlobalRef>>> {
         let env = self.vm.get_env()?;
-        let jfuture = JFuture::from_env(&env, self.internal.as_obj())?;
+        let jfuture = JFuture::from_env(&env, self.internal.as_obj())?.into_future();
         jfuture
             .poll_internal(context)
             .map(|result| result.map(|result| Ok(env.new_global_ref(result)?)))
     }
 }
 
-impl Future for JavaFuture {
+impl Future for JSendFuture {
     type Output = Result<GlobalRef>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
@@ -150,11 +183,11 @@ impl Future for JavaFuture {
     }
 }
 
-assert_impl_all!(JavaFuture: Send);
+assert_impl_all!(JSendFuture: Send);
 
 #[cfg(test)]
 mod test {
-    use super::{JFuture, JavaFuture};
+    use super::{JFuture, JSendFuture};
     use crate::{task::JPollResult, test_utils};
     use std::{
         future::Future,
@@ -178,7 +211,7 @@ mod test {
             let future_obj = env
                 .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
                 .unwrap();
-            let mut future = JFuture::from_env(env, future_obj).unwrap();
+            let mut future = JFuture::from_env(env, future_obj).unwrap().into_future();
 
             assert!(
                 Future::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)).is_pending()
@@ -241,7 +274,7 @@ mod test {
                     },
                     async {
                         assert!(env
-                            .is_same_object(future.await.unwrap().get().unwrap(), obj)
+                            .is_same_object(future.into_future().await.unwrap().get().unwrap(), obj)
                             .unwrap());
                     }
                 );
@@ -272,7 +305,7 @@ mod test {
                         .unwrap();
                     },
                     async {
-                        future.await.unwrap().get().unwrap_err();
+                        future.into_future().await.unwrap().get().unwrap_err();
                         let future_ex = env.exception_occurred().unwrap();
                         env.exception_clear().unwrap();
                         let actual_ex = env
@@ -288,7 +321,7 @@ mod test {
     }
 
     #[test]
-    fn test_java_future_await() {
+    fn test_jsendfuture_await() {
         use futures::{executor::block_on, join};
         use std::convert::TryInto;
 
@@ -297,7 +330,7 @@ mod test {
                 .new_object("io/github/gedgygedgy/rust/future/SimpleFuture", "()V", &[])
                 .unwrap();
             let future = JFuture::from_env(env, future_obj).unwrap();
-            let future: JavaFuture = future.try_into().unwrap();
+            let future: JSendFuture = future.try_into().unwrap();
             let obj = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
             block_on(async {
