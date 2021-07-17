@@ -31,7 +31,8 @@ fn fn_once_runnable_internal<'a: 'b, 'b>(
 
 /// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
 /// [`FnOnce`] without checking if it is [`Send`]. Attempting to call `run()`
-/// or `close()` on the resulting object will result in an
+/// or `close()` on the resulting object from a thread other than its origin
+/// thread will result in an
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_once_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
@@ -72,7 +73,8 @@ fn fn_runnable_internal<'a: 'b, 'b>(
 
 /// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given [`Fn`]
 /// without checking if it is [`Send`] or [`Sync`]. Attempting to call `run()`
-/// or `close()` on the resulting object will result in an
+/// or `close()` on the resulting object from a thread other than its origin
+/// thread will result in an
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
