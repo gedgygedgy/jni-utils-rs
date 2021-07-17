@@ -44,6 +44,9 @@ pub fn fn_once_runnable_local<'a: 'b, 'b>(
 /// [`FnOnce`]. The function can later be called by calling the object's
 /// `run()` method. The function can be freed without calling it by calling
 /// the object's `close()` method.
+///
+/// It is safe to call the object's `run()` method recursively, but the second
+/// call will be a no-op.
 pub fn fn_once_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
     f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
@@ -82,6 +85,8 @@ pub fn fn_runnable_local<'a: 'b, 'b>(
 /// The function can later be called by calling the object's `run()` method.
 /// The function can be freed without calling it by calling the object's
 /// `close()` method.
+///
+/// It is safe to call the object's `run()` method recursively.
 pub fn fn_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
     f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static,
