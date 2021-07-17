@@ -29,7 +29,7 @@ fn fn_once_runnable_internal<'a: 'b, 'b>(
     )
 }
 
-/// Create an `io.github.gedgygedgy.rust.ops.FnOnceRunnable` from a given
+/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
 /// [`FnOnce`] without checking if it is [`Send`]. Attempting to call `run()`
 /// or `close()` on the resulting object will result in an
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
@@ -40,7 +40,7 @@ pub fn fn_once_runnable_local<'a: 'b, 'b>(
     fn_once_runnable_internal(env, f, true)
 }
 
-/// Create an `io.github.gedgygedgy.rust.ops.FnOnceRunnable` from a given
+/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
 /// [`FnOnce`]. The function can later be called by calling the object's
 /// `run()` method. The function can be freed without calling it by calling
 /// the object's `close()` method.
