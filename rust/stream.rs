@@ -115,23 +115,23 @@ impl<'a: 'b, 'b> Stream for JStream<'a, 'b> {
 /// [`Send`] version of [`JStream`]. Instead of storing a [`JNIEnv`], it stores
 /// a [`JavaVM`] and calls [`JavaVM::get_env`] when [`Stream::poll_next`] is
 /// called.
-pub struct JavaStream {
+pub struct JSendStream {
     internal: GlobalRef,
     vm: JavaVM,
 }
 
-impl<'a: 'b, 'b> TryFrom<JStream<'a, 'b>> for JavaStream {
+impl<'a: 'b, 'b> TryFrom<JStream<'a, 'b>> for JSendStream {
     type Error = Error;
 
     fn try_from(stream: JStream<'a, 'b>) -> Result<Self> {
-        Ok(JavaStream {
+        Ok(Self {
             internal: stream.env.new_global_ref(stream.internal)?,
             vm: stream.env.get_java_vm()?,
         })
     }
 }
 
-impl ::std::ops::Deref for JavaStream {
+impl ::std::ops::Deref for JSendStream {
     type Target = GlobalRef;
 
     fn deref(&self) -> &Self::Target {
@@ -139,7 +139,7 @@ impl ::std::ops::Deref for JavaStream {
     }
 }
 
-impl JavaStream {
+impl JSendStream {
     fn poll_next_internal(
         &self,
         context: &mut Context<'_>,
@@ -152,7 +152,7 @@ impl JavaStream {
     }
 }
 
-impl Stream for JavaStream {
+impl Stream for JSendStream {
     type Item = Result<GlobalRef>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -163,7 +163,7 @@ impl Stream for JavaStream {
     }
 }
 
-assert_impl_all!(JavaStream: Send);
+assert_impl_all!(JSendStream: Send);
 
 struct JStreamPoll<'a: 'b, 'b> {
     internal: JObject<'a>,
@@ -319,8 +319,8 @@ mod test {
     }
 
     #[test]
-    fn test_java_stream_await() {
-        use super::JavaStream;
+    fn test_jsendstream_await() {
+        use super::JSendStream;
         use futures::{executor::block_on, join};
         use std::convert::TryInto;
 
@@ -329,7 +329,7 @@ mod test {
                 .new_object("io/github/gedgygedgy/rust/stream/QueueStream", "()V", &[])
                 .unwrap();
             let stream = JStream::from_env(env, stream_obj).unwrap();
-            let mut stream: JavaStream = stream.try_into().unwrap();
+            let mut stream: JSendStream = stream.try_into().unwrap();
             let obj1 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
             let obj2 = env.new_object("java/lang/Object", "()V", &[]).unwrap();
 
