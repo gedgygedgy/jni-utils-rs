@@ -6,14 +6,15 @@ struct SendSyncWrapper<T>(T);
 unsafe impl<T> Send for SendSyncWrapper<T> {}
 unsafe impl<T> Sync for SendSyncWrapper<T> {}
 
-type FnOnceWrapper = SendSyncWrapper<Box<dyn for<'a, 'b> FnOnce(&'b JNIEnv<'a>) + 'static>>;
+type FnOnceWrapper =
+    SendSyncWrapper<Box<dyn for<'a, 'b> FnOnce(&'b JNIEnv<'a>, JObject<'a>) + 'static>>;
 
 fn fn_once_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>) + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let boxed: Box<dyn for<'c, 'd> FnOnce(&'d JNIEnv<'c>)> = Box::from(f);
+    let boxed: Box<dyn for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>)> = Box::from(f);
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnOnceRunnable")?);
 
@@ -28,7 +29,7 @@ fn fn_once_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_once_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>) + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
 ) -> Result<JObject<'a>> {
     fn_once_runnable_internal(env, f, true)
 }
@@ -39,19 +40,19 @@ pub fn fn_once_runnable_local<'a: 'b, 'b>(
 /// the object's `close()` method.
 pub fn fn_once_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>) + Send + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
 ) -> Result<JObject<'a>> {
     fn_once_runnable_internal(env, f, false)
 }
 
-type FnWrapper = SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>) + 'static>>;
+type FnWrapper = SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + 'static>>;
 
 fn fn_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>) + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>)> = Arc::from(f);
+    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)> = Arc::from(f);
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnable")?);
 
@@ -66,7 +67,7 @@ fn fn_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>) + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
 ) -> Result<JObject<'a>> {
     fn_runnable_internal(env, f, true)
 }
@@ -77,7 +78,7 @@ pub fn fn_runnable_local<'a: 'b, 'b>(
 /// `close()` method.
 pub fn fn_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>) + Send + Sync + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static,
 ) -> Result<JObject<'a>> {
     fn_runnable_internal(env, f, false)
 }
@@ -88,7 +89,7 @@ pub(crate) mod jni {
 
     extern "C" fn fn_once_run_internal(env: JNIEnv, obj: JObject) {
         if let Ok(f) = env.take_rust_field::<_, _, FnOnceWrapper>(obj, "data") {
-            f.0(&env);
+            f.0(&env, obj);
         }
     }
 
@@ -102,7 +103,7 @@ pub(crate) mod jni {
         } else {
             return;
         };
-        arc(&env);
+        arc(&env, obj);
     }
 
     extern "C" fn fn_close_internal(env: JNIEnv, obj: JObject) {
@@ -153,7 +154,7 @@ pub(crate) mod jni {
 #[cfg(test)]
 mod test {
     use crate::test_utils;
-    use jni::JNIEnv;
+    use jni::{objects::JObject, JNIEnv};
     use std::{
         cell::RefCell,
         rc::Rc,
@@ -162,13 +163,13 @@ mod test {
 
     fn create_test_fn<'a: 'b, 'b>() -> (
         Arc<Mutex<u32>>,
-        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>) + Send + Sync + 'static>,
+        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static>,
     ) {
         let arc = Arc::new(Mutex::new(0));
         let arc2 = arc.clone();
         (
             arc,
-            Box::new(move |_e| {
+            Box::new(move |_e, _o| {
                 let mut guard = arc2.lock().unwrap();
                 *&mut *guard += 1;
             }),
@@ -177,13 +178,13 @@ mod test {
 
     fn create_test_fn_local<'a: 'b, 'b>() -> (
         Rc<RefCell<u32>>,
-        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>) + 'static>,
+        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static>,
     ) {
         let rc = Rc::new(RefCell::new(0));
         let rc2 = rc.clone();
         (
             rc,
-            Box::new(move |_e| {
+            Box::new(move |_e, _o| {
                 let mut guard = rc2.try_borrow_mut().unwrap();
                 *&mut *guard += 1;
             }),
@@ -289,7 +290,27 @@ mod test {
             env.call_method(thread, "start", "()V", &[]).unwrap();
             env.call_method(thread, "join", "()V", &[]).unwrap();
             test_data(&data, 1, 1);
-        })
+        });
+    }
+
+    #[test]
+    fn test_fn_once_object() {
+        test_utils::JVM_ENV.with(|env| {
+            let obj_ref = Arc::new(Mutex::new(env.new_global_ref(JObject::null()).unwrap()));
+            let obj_ref_2 = obj_ref.clone();
+            let runnable = super::fn_once_runnable(env, move |e, o| {
+                let guard = obj_ref_2.lock().unwrap();
+                assert!(e.is_same_object(guard.as_obj(), o).unwrap());
+            })
+            .unwrap();
+
+            {
+                let mut guard = obj_ref.lock().unwrap();
+                *guard = env.new_global_ref(runnable).unwrap();
+            }
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+        });
     }
 
     #[test]
@@ -319,7 +340,7 @@ mod test {
             let runnable = env.new_global_ref(runnable).unwrap();
             test_data_local(&data, 0, 2);
 
-            let runnable = super::fn_runnable(env, move |env| {
+            let runnable = super::fn_runnable(env, move |env, _obj| {
                 let value = crate::exceptions::try_block(env, || {
                     env.call_method(runnable.as_obj(), "run", "()V", &[])?;
                     Ok(false)
@@ -356,7 +377,7 @@ mod test {
             env.call_method(thread, "start", "()V", &[]).unwrap();
             env.call_method(thread, "join", "()V", &[]).unwrap();
             test_data_local(&data, 0, 2);
-        })
+        });
     }
 
     #[test]
@@ -446,7 +467,27 @@ mod test {
             env.call_method(thread, "start", "()V", &[]).unwrap();
             env.call_method(thread, "join", "()V", &[]).unwrap();
             test_data(&data, 1, 2);
-        })
+        });
+    }
+
+    #[test]
+    fn test_fn_object() {
+        test_utils::JVM_ENV.with(|env| {
+            let obj_ref = Arc::new(Mutex::new(env.new_global_ref(JObject::null()).unwrap()));
+            let obj_ref_2 = obj_ref.clone();
+            let runnable = super::fn_runnable(env, move |e, o| {
+                let guard = obj_ref_2.lock().unwrap();
+                assert!(e.is_same_object(guard.as_obj(), o).unwrap());
+            })
+            .unwrap();
+
+            {
+                let mut guard = obj_ref.lock().unwrap();
+                *guard = env.new_global_ref(runnable).unwrap();
+            }
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+        });
     }
 
     #[test]
@@ -476,7 +517,7 @@ mod test {
             let runnable = env.new_global_ref(runnable).unwrap();
             test_data_local(&data, 0, 2);
 
-            let runnable = super::fn_runnable(env, move |env| {
+            let runnable = super::fn_runnable(env, move |env, _obj| {
                 let value = crate::exceptions::try_block(env, || {
                     env.call_method(runnable.as_obj(), "run", "()V", &[])?;
                     Ok(false)
@@ -513,6 +554,6 @@ mod test {
             env.call_method(thread, "start", "()V", &[]).unwrap();
             env.call_method(thread, "join", "()V", &[]).unwrap();
             test_data_local(&data, 0, 2);
-        })
+        });
     }
 }

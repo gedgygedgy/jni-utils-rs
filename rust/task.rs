@@ -17,7 +17,7 @@ use std::task::Waker;
 /// * `env` - Java environment in which to create the object.
 /// * `waker` - Waker to wrap in a Java object.
 pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a>> {
-    let runnable = crate::ops::fn_once_runnable(env, |_e| waker.wake())?;
+    let runnable = crate::ops::fn_once_runnable(env, |_e, _o| waker.wake())?;
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/task/Waker")?);
 
