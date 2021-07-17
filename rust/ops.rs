@@ -293,6 +293,32 @@ mod test {
     }
 
     #[test]
+    fn test_fn_once_recursive() {
+        test_utils::JVM_ENV.with(|env| {
+            let arc = Arc::new(Mutex::new(false));
+            let arc2 = arc.clone();
+
+            let runnable = super::fn_once_runnable(env, move |env, obj| {
+                let value = {
+                    let mut guard = arc2.lock().unwrap();
+                    let old = *guard;
+                    *guard = true;
+                    old
+                };
+                if !value {
+                    env.call_method(obj, "run", "()V", &[]).unwrap();
+                }
+            })
+            .unwrap();
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+
+            let guard = arc.lock().unwrap();
+            assert!(*guard);
+        })
+    }
+
+    #[test]
     fn test_fn_once_local_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn_local();
@@ -467,6 +493,39 @@ mod test {
 
             env.call_method(runnable, "run", "()V", &[]).unwrap();
         });
+    }
+
+    #[test]
+    fn test_fn_recursive() {
+        test_utils::JVM_ENV.with(|env| {
+            let arc = Arc::new(Mutex::new(false));
+            let arc2 = arc.clone();
+
+            let calling = Mutex::new(false);
+
+            let runnable = super::fn_runnable(env, move |env, obj| {
+                let calling_value = {
+                    let mut guard = calling.lock().unwrap();
+                    let old = *guard;
+                    *guard = true;
+                    old
+                };
+                if !calling_value {
+                    env.call_method(obj, "run", "()V", &[]).unwrap();
+                    let mut guard = calling.lock().unwrap();
+                    *guard = false;
+                } else {
+                    let mut guard = arc2.lock().unwrap();
+                    *guard = true;
+                }
+            })
+            .unwrap();
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+
+            let guard = arc.lock().unwrap();
+            assert!(*guard);
+        })
     }
 
     #[test]
