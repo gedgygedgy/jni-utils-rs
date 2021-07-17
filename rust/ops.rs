@@ -1,26 +1,32 @@
 use ::jni::{errors::Result, objects::JObject, JNIEnv};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 struct SendSyncWrapper<T>(T);
 
 unsafe impl<T> Send for SendSyncWrapper<T> {}
 unsafe impl<T> Sync for SendSyncWrapper<T> {}
 
-type FnOnceWrapper =
-    SendSyncWrapper<Box<dyn for<'a, 'b> FnOnce(&'b JNIEnv<'a>, JObject<'a>) + 'static>>;
-
 fn fn_once_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
     f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let boxed: Box<dyn for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>)> = Box::from(f);
-
-    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnOnceRunnable")?);
-
-    let obj = env.new_object(&class, "(Z)V", &[local.into()])?;
-    env.set_rust_field::<_, _, FnOnceWrapper>(obj, "data", SendSyncWrapper(boxed))?;
-    Ok(obj)
+    let mutex = Mutex::new(Some(f));
+    fn_runnable_internal(
+        env,
+        move |env, obj| {
+            let f = {
+                let mut guard = mutex.lock().unwrap();
+                if let Some(f) = guard.take() {
+                    f
+                } else {
+                    return;
+                }
+            };
+            f(env, obj)
+        },
+        local,
+    )
 }
 
 /// Create an `io.github.gedgygedgy.rust.ops.FnOnceRunnable` from a given
@@ -54,7 +60,7 @@ fn fn_runnable_internal<'a: 'b, 'b>(
 ) -> Result<JObject<'a>> {
     let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)> = Arc::from(f);
 
-    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnable")?);
+    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
 
     let obj = env.new_object(&class, "(Z)V", &[local.into()])?;
     env.set_rust_field::<_, _, FnWrapper>(obj, "data", SendSyncWrapper(arc))?;
@@ -84,18 +90,8 @@ pub fn fn_runnable<'a: 'b, 'b>(
 }
 
 pub(crate) mod jni {
-    use super::{FnOnceWrapper, FnWrapper};
+    use super::FnWrapper;
     use jni::{errors::Result, objects::JObject, JNIEnv, NativeMethod};
-
-    extern "C" fn fn_once_run_internal(env: JNIEnv, obj: JObject) {
-        if let Ok(f) = env.take_rust_field::<_, _, FnOnceWrapper>(obj, "data") {
-            f.0(&env, obj);
-        }
-    }
-
-    extern "C" fn fn_once_close_internal(env: JNIEnv, obj: JObject) {
-        let _ = env.take_rust_field::<_, _, FnOnceWrapper>(obj, "data");
-    }
 
     extern "C" fn fn_run_internal(env: JNIEnv, obj: JObject) {
         let arc = if let Ok(f) = env.get_rust_field::<_, _, FnWrapper>(obj, "data") {
@@ -113,24 +109,7 @@ pub(crate) mod jni {
     pub fn init(env: &JNIEnv) -> Result<()> {
         use std::ffi::c_void;
 
-        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnOnceRunnable")?);
-        env.register_native_methods(
-            &class,
-            &[
-                NativeMethod {
-                    name: "runInternal".into(),
-                    sig: "()V".into(),
-                    fn_ptr: fn_once_run_internal as *mut c_void,
-                },
-                NativeMethod {
-                    name: "closeInternal".into(),
-                    sig: "()V".into(),
-                    fn_ptr: fn_once_close_internal as *mut c_void,
-                },
-            ],
-        )?;
-
-        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnable")?);
+        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
         env.register_native_methods(
             &class,
             &[

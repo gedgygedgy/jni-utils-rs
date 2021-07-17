@@ -5,34 +5,26 @@ import io.github.gedgygedgy.rust.thread.LocalThreadChecker;
 import java.io.Closeable;
 
 /**
- * Wraps a {@code std::ops::Fn} in a Java object.
+ * Wraps a {@code std::ops::Fn} or {@code std::ops::FnOnce} in a Java object.
  * <p>
  * Instances of this class cannot be obtained directly from Java. Instead, call
- * {@code jni_utils::ops::fn_runnable()} from Rust code to obtain an instance
- * of this class.
+ * {@code jni_utils::ops::fn_runnable()} or
+ * {@code jni_utils::ops::fn_once_runnable()} from Rust code to obtain an
+ * instance of this class.
  */
-public final class FnRunnable implements Runnable, Closeable {
-    private final LocalThreadChecker threadChecker;
-    private long data;
-
-    private FnRunnable(boolean local) {
-        this.threadChecker = new LocalThreadChecker(local);
-    }
-
+public interface FnRunnable extends Runnable, Closeable {
     /**
-     * Runs the {@code std::ops::Fn} associated with this object.
+     * Runs the {@code std::ops::Fn} or {@code std::ops::FnOnce} associated
+     * with this object.
      * <p>
-     * Unlike {@link FnOnceRunnable#run}, this method is not idempotent -
-     * calling it twice will call the associated {@code std::ops::Fn} twice.
-     * If {@link close} has already been called, this method is a no-op.
+     * If the function is a {@code std::ops::Fn}, calling this method twice
+     * will call the associated function twice. If the function is a
+     * {@code std::ops::FnOnce}, this method is idempotent - calling it a
+     * second time will have no effect. If {@link close} has already been
+     * called, this method is a no-op.
      */
     @Override
-    public void run() {
-        this.threadChecker.check();
-        this.runInternal();
-    }
-
-    private native void runInternal();
+    public void run();
 
     /**
      * Disposes of the {@code std::ops::Fn} associated with this object.
@@ -41,10 +33,5 @@ public final class FnRunnable implements Runnable, Closeable {
      * no-op.
      */
     @Override
-    public void close() {
-        this.threadChecker.check();
-        this.closeInternal();
-    }
-
-    private native void closeInternal();
+    public void close();
 }

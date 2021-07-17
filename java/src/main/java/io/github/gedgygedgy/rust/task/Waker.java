@@ -1,6 +1,6 @@
 package io.github.gedgygedgy.rust.task;
 
-import io.github.gedgygedgy.rust.ops.FnOnceRunnable;
+import io.github.gedgygedgy.rust.ops.FnRunnable;
 
 import java.io.Closeable;
 
@@ -14,9 +14,9 @@ import java.io.Closeable;
  * take care of this for you.)
  */
 public final class Waker implements Closeable {
-    private final FnOnceRunnable wakeRunnable;
+    private final FnRunnable wakeRunnable;
 
-    private Waker(FnOnceRunnable wakeRunnable) {
+    private Waker(FnRunnable wakeRunnable) {
         this.wakeRunnable = wakeRunnable;
     }
 

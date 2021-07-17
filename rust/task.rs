@@ -23,7 +23,7 @@ pub fn waker<'a: 'b, 'b>(env: &'b JNIEnv<'a>, waker: Waker) -> Result<JObject<'a
 
     let obj = env.new_object(
         &class,
-        "(Lio/github/gedgygedgy/rust/ops/FnOnceRunnable;)V",
+        "(Lio/github/gedgygedgy/rust/ops/FnRunnable;)V",
         &[runnable.into()],
     )?;
     Ok(obj)
