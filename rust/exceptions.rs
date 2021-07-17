@@ -1,9 +1,10 @@
 use jni::{
     descriptors::Desc,
     errors::Error,
-    objects::{JClass, JThrowable},
+    objects::{JClass, JObject, JThrowable},
     JNIEnv,
 };
+use std::{any::Any, convert::TryFrom, sync::MutexGuard};
 
 /// Result from [`try_block`]. This object can be chained into
 /// [`catch`](TryCatchResult::catch) calls to catch exceptions. When finished
@@ -112,6 +113,87 @@ impl<'a: 'b, 'b, T> TryCatchResult<'a, 'b, T> {
             (Ok(Err(_)), Some(r)) => r,
             (Ok(Err(e)), None) => Err(e),
         }
+    }
+}
+
+/// Wrapper for [`JObject`]s that implement
+/// `io.github.gedgygedgy.rust.panic.PanicException`. Provides methods to get
+/// and take the associated [`Any`].
+///
+/// Looks up the class and method IDs on creation rather than for every method
+/// call.
+pub struct JPanicException<'a: 'b, 'b> {
+    internal: JThrowable<'a>,
+    env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> JPanicException<'a, 'b> {
+    /// Create a [`JPanicException`] from the environment and an object. This
+    /// looks up the necessary class and method IDs to call all of the methods
+    /// on it so that extra work doesn't need to be done on every method call.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - Java environment to use.
+    /// * `obj` - Object to wrap.
+    pub fn from_env(env: &'b JNIEnv<'a>, obj: JThrowable<'a>) -> Result<Self, Error> {
+        Ok(Self { internal: obj, env })
+    }
+
+    /// Create a new `PanicException` from the given [`Any`].
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - Java environment to use.
+    /// * `any` - [`Any`] to put in the `PanicException`.
+    pub fn new(env: &'b JNIEnv<'a>, any: Box<dyn Any + Send + 'static>) -> Result<Self, Error> {
+        let msg = if let Some(s) = any.downcast_ref::<&str>() {
+            env.new_string(s)?
+        } else if let Some(s) = any.downcast_ref::<String>() {
+            env.new_string(s)?
+        } else {
+            JObject::null().into()
+        };
+
+        let obj = env.new_object(
+            "io/github/gedgygedgy/rust/panic/PanicException",
+            "(Ljava/lang/String;)V",
+            &[msg.into()],
+        )?;
+        env.set_rust_field(obj, "any", any)?;
+        Self::from_env(env, obj.into())
+    }
+
+    /// Borrows the [`Any`] associated with the exception.
+    pub fn get(&self) -> Result<MutexGuard<Box<dyn Any + Send + 'static>>, Error> {
+        self.env.get_rust_field(self.internal, "any")
+    }
+
+    /// Takes the [`Any`] associated with the exception.
+    pub fn take(&self) -> Result<Box<dyn Any + Send + 'static>, Error> {
+        self.env.take_rust_field(self.internal, "any")
+    }
+}
+
+impl<'a: 'b, 'b> TryFrom<JPanicException<'a, 'b>> for Box<dyn Any + Send + 'static> {
+    type Error = Error;
+
+    fn try_from(ex: JPanicException<'a, 'b>) -> Result<Self, Error> {
+        ex.take()
+    }
+}
+
+impl<'a: 'b, 'b> From<JPanicException<'a, 'b>> for JThrowable<'a> {
+    fn from(ex: JPanicException<'a, 'b>) -> Self {
+        ex.internal
+    }
+}
+
+impl<'a: 'b, 'b> ::std::ops::Deref for JPanicException<'a, 'b> {
+    type Target = JThrowable<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
     }
 }
 
@@ -352,5 +434,82 @@ mod test {
                 panic!("JavaException not found");
             }
         });
+    }
+
+    #[test]
+    fn test_panic_exception_static_str() {
+        test_utils::JVM_ENV.with(|env| {
+            use jni::{objects::JString, strings::JavaStr};
+
+            const STATIC_MSG: &'static str = "This is a &'static str";
+            let ex = super::JPanicException::new(env, Box::new(STATIC_MSG)).unwrap();
+
+            {
+                let any = ex.get().unwrap();
+                assert_eq!(*any.downcast_ref::<&str>().unwrap(), STATIC_MSG);
+            }
+
+            let msg: JString = env
+                .call_method(ex.clone(), "getMessage", "()Ljava/lang/String;", &[])
+                .unwrap()
+                .l()
+                .unwrap()
+                .into();
+            let str = JavaStr::from_env(env, msg).unwrap();
+            assert_eq!(str.to_str().unwrap(), STATIC_MSG);
+        })
+    }
+
+    #[test]
+    fn test_panic_exception_string() {
+        test_utils::JVM_ENV.with(|env| {
+            use jni::{objects::JString, strings::JavaStr};
+            use std::any::Any;
+
+            const STRING_MSG: &'static str = "This is a String";
+            let ex = super::JPanicException::new(env, Box::new(STRING_MSG.to_string())).unwrap();
+
+            {
+                let any = ex.get().unwrap();
+                assert_eq!(*any.downcast_ref::<String>().unwrap(), STRING_MSG);
+            }
+
+            let msg: JString = env
+                .call_method(ex.clone(), "getMessage", "()Ljava/lang/String;", &[])
+                .unwrap()
+                .l()
+                .unwrap()
+                .into();
+            let str = JavaStr::from_env(env, msg).unwrap();
+            assert_eq!(str.to_str().unwrap(), STRING_MSG);
+
+            let any: Box<dyn Any + Send> = ex.take().unwrap();
+            assert_eq!(*any.downcast::<String>().unwrap(), STRING_MSG);
+        })
+    }
+
+    #[test]
+    fn test_panic_exception_other() {
+        test_utils::JVM_ENV.with(|env| {
+            use jni::objects::JObject;
+            use std::{any::Any, convert::TryInto};
+
+            let ex = super::JPanicException::new(env, Box::new(42)).unwrap();
+
+            {
+                let any = ex.get().unwrap();
+                assert_eq!(*any.downcast_ref::<i32>().unwrap(), 42);
+            }
+
+            let msg = env
+                .call_method(ex.clone(), "getMessage", "()Ljava/lang/String;", &[])
+                .unwrap()
+                .l()
+                .unwrap();
+            assert!(env.is_same_object(msg, JObject::null()).unwrap());
+
+            let any: Box<dyn Any + Send> = ex.try_into().unwrap();
+            assert_eq!(*any.downcast::<i32>().unwrap(), 42);
+        })
     }
 }
