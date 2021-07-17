@@ -21,7 +21,7 @@ use std::{
 /// Looks up the class and method IDs on creation rather than for every method
 /// call.
 ///
-/// For a [`Send`] version of this, use [`JavaStream`].
+/// For a [`Send`] version of this, use [`JSendStream`].
 pub struct JStream<'a: 'b, 'b> {
     internal: JObject<'a>,
     poll_next: JMethodID<'a>,
