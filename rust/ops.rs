@@ -55,6 +55,50 @@ pub fn fn_once_runnable<'a: 'b, 'b>(
     fn_once_runnable_internal(env, f, false)
 }
 
+fn fn_mut_runnable_internal<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    local: bool,
+) -> Result<JObject<'a>> {
+    let mutex = Mutex::new(f);
+    fn_runnable_internal(
+        env,
+        move |env, obj| {
+            let mut guard = mutex.lock().unwrap();
+            guard(env, obj)
+        },
+        local,
+    )
+}
+
+/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
+/// [`FnMut`] without checking if it is [`Send`]. Attempting to call `run()`
+/// or `close()` on the resulting object from a thread other than its origin
+/// thread will result in an
+/// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
+pub fn fn_mut_runnable_local<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+) -> Result<JObject<'a>> {
+    fn_mut_runnable_internal(env, f, true)
+}
+
+/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
+/// [`FnMut`]. The function can later be called by calling the object's
+/// `run()` method. The function can be freed without calling it by calling
+/// the object's `close()` method.
+///
+/// Unlike [`fn_runnable`] and [`fn_once_runnable`], it is not safe to call the
+/// resulting object's `run()` method recursively. The [`FnMut`] is managed
+/// with an internal [`Mutex`], so calling `run()` recursively will result in a
+/// deadlock.
+pub fn fn_mut_runnable<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
+) -> Result<JObject<'a>> {
+    fn_mut_runnable_internal(env, f, false)
+}
+
 type FnWrapper = SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + 'static>>;
 
 fn fn_runnable_internal<'a: 'b, 'b>(
@@ -349,6 +393,183 @@ mod test {
             test_data_local(&data, 0, 2);
 
             let runnable = super::fn_once_runnable_local(env, f).unwrap();
+            let runnable = env.new_global_ref(runnable).unwrap();
+            test_data_local(&data, 0, 2);
+
+            let runnable = super::fn_runnable(env, move |env, _obj| {
+                let value = crate::exceptions::try_block(env, || {
+                    env.call_method(runnable.as_obj(), "run", "()V", &[])?;
+                    Ok(false)
+                })
+                .catch(
+                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                    |_ex| Ok(true),
+                )
+                .result()
+                .unwrap();
+                assert!(value);
+
+                let value = crate::exceptions::try_block(env, || {
+                    env.call_method(runnable.as_obj(), "close", "()V", &[])?;
+                    Ok(false)
+                })
+                .catch(
+                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                    |_ex| Ok(true),
+                )
+                .result()
+                .unwrap();
+                assert!(value);
+            })
+            .unwrap();
+
+            let thread = env
+                .new_object(
+                    "java/lang/Thread",
+                    "(Ljava/lang/Runnable;)V",
+                    &[runnable.into()],
+                )
+                .unwrap();
+            env.call_method(thread, "start", "()V", &[]).unwrap();
+            env.call_method(thread, "join", "()V", &[]).unwrap();
+            test_data_local(&data, 0, 2);
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_run() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
+
+            let runnable = super::fn_mut_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 2);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 2, 2);
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_close() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
+
+            let runnable = super::fn_mut_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
+
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
+
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_run_close() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
+
+            let runnable = super::fn_mut_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 2);
+
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_close_run() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
+
+            let runnable = super::fn_mut_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
+
+            env.call_method(runnable, "close", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 0, 1);
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_thread() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
+
+            let runnable = super::fn_mut_runnable(env, f).unwrap();
+            test_data(&data, 0, 2);
+
+            let thread = env
+                .new_object(
+                    "java/lang/Thread",
+                    "(Ljava/lang/Runnable;)V",
+                    &[runnable.into()],
+                )
+                .unwrap();
+            env.call_method(thread, "start", "()V", &[]).unwrap();
+            env.call_method(thread, "join", "()V", &[]).unwrap();
+            test_data(&data, 1, 2);
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_object() {
+        test_utils::JVM_ENV.with(|env| {
+            let obj_ref = Arc::new(Mutex::new(env.new_global_ref(JObject::null()).unwrap()));
+            let obj_ref_2 = obj_ref.clone();
+            let runnable = super::fn_mut_runnable(env, move |e, o| {
+                let guard = obj_ref_2.lock().unwrap();
+                assert!(e.is_same_object(guard.as_obj(), o).unwrap());
+            })
+            .unwrap();
+
+            {
+                let mut guard = obj_ref.lock().unwrap();
+                *guard = env.new_global_ref(runnable).unwrap();
+            }
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_local_run() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn_local();
+            test_data_local(&data, 0, 2);
+
+            let runnable = super::fn_mut_runnable_local(env, f).unwrap();
+            test_data_local(&data, 0, 2);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data_local(&data, 1, 2);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data_local(&data, 2, 2);
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_local_thread() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn_local();
+            test_data_local(&data, 0, 2);
+
+            let runnable = super::fn_mut_runnable_local(env, f).unwrap();
             let runnable = env.new_global_ref(runnable).unwrap();
             test_data_local(&data, 0, 2);
 
