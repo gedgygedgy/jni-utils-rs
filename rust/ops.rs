@@ -165,7 +165,9 @@ pub(crate) mod jni {
     }
 
     extern "C" fn fn_close_internal(env: JNIEnv, obj: JObject) {
-        let _ = env.take_rust_field::<_, _, FnWrapper>(obj, "data");
+        let _ = crate::exceptions::throw_unwind(&env, || {
+            let _ = env.take_rust_field::<_, _, FnWrapper>(obj, "data");
+        });
     }
 
     pub fn init(env: &JNIEnv) -> Result<()> {
@@ -194,7 +196,7 @@ pub(crate) mod jni {
 
 #[cfg(test)]
 mod test {
-    use crate::test_utils;
+    use crate::{exceptions::try_block, test_utils};
     use jni::{objects::JObject, JNIEnv};
     use std::{
         cell::RefCell,
@@ -242,6 +244,40 @@ mod test {
         assert_eq!(Rc::strong_count(data), expected_refcount);
         let guard = data.try_borrow().unwrap();
         assert_eq!(*guard, expected);
+    }
+
+    struct DropPanic;
+
+    impl DropPanic {
+        pub fn keep_alive(&self) {}
+    }
+
+    impl Drop for DropPanic {
+        fn drop(&mut self) {
+            panic!("DropPanic dropped");
+        }
+    }
+
+    fn create_drop_panic_fn(
+    ) -> Box<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + Send + Sync + 'static> {
+        let p = DropPanic;
+        Box::new(move |_e, _o| {
+            p.keep_alive();
+        })
+    }
+
+    #[test]
+    fn test_drop_panic() {
+        test_utils::JVM_ENV.with(|env| {
+            use std::{
+                mem::drop,
+                panic::{catch_unwind, AssertUnwindSafe},
+            };
+
+            let dp = AssertUnwindSafe(create_drop_panic_fn());
+            dp(env, JObject::null());
+            catch_unwind(|| drop(dp)).unwrap_err();
+        });
     }
 
     #[test]
@@ -424,6 +460,29 @@ mod test {
 
             env.call_method(runnable, "run", "()V", &[]).unwrap();
             test_data(&data, 1, 1);
+        });
+    }
+
+    #[test]
+    fn test_fn_once_drop_panic() {
+        test_utils::JVM_ENV.with(|env| {
+            let dp = create_drop_panic_fn();
+            let runnable = super::fn_once_runnable(env, dp).unwrap();
+
+            let result = try_block(env, || {
+                env.call_method(runnable, "close", "()V", &[])?;
+                Ok(false)
+            })
+            .catch("io/github/gedgygedgy/rust/panic/PanicException", |ex| {
+                let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+                let any = ex.take().unwrap();
+                let msg = any.downcast::<&str>().unwrap();
+                assert_eq!(*msg, "DropPanic dropped");
+                Ok(true)
+            })
+            .result()
+            .unwrap();
+            assert!(result);
         });
     }
 
@@ -647,6 +706,29 @@ mod test {
 
             env.call_method(runnable, "run", "()V", &[]).unwrap();
             test_data(&data, 1, 1);
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_drop_panic() {
+        test_utils::JVM_ENV.with(|env| {
+            let dp = create_drop_panic_fn();
+            let runnable = super::fn_mut_runnable(env, dp).unwrap();
+
+            let result = try_block(env, || {
+                env.call_method(runnable, "close", "()V", &[])?;
+                Ok(false)
+            })
+            .catch("io/github/gedgygedgy/rust/panic/PanicException", |ex| {
+                let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+                let any = ex.take().unwrap();
+                let msg = any.downcast::<&str>().unwrap();
+                assert_eq!(*msg, "DropPanic dropped");
+                Ok(true)
+            })
+            .result()
+            .unwrap();
+            assert!(result);
         });
     }
 
@@ -903,6 +985,29 @@ mod test {
 
             env.call_method(runnable, "run", "()V", &[]).unwrap();
             test_data(&data, 1, 1);
+        });
+    }
+
+    #[test]
+    fn test_fn_drop_panic() {
+        test_utils::JVM_ENV.with(|env| {
+            let dp = create_drop_panic_fn();
+            let runnable = super::fn_runnable(env, dp).unwrap();
+
+            let result = try_block(env, || {
+                env.call_method(runnable, "close", "()V", &[])?;
+                Ok(false)
+            })
+            .catch("io/github/gedgygedgy/rust/panic/PanicException", |ex| {
+                let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+                let any = ex.take().unwrap();
+                let msg = any.downcast::<&str>().unwrap();
+                assert_eq!(*msg, "DropPanic dropped");
+                Ok(true)
+            })
+            .result()
+            .unwrap();
+            assert!(result);
         });
     }
 
