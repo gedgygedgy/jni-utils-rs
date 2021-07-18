@@ -42,8 +42,8 @@ pub fn fn_once_runnable_local<'a: 'b, 'b>(
 }
 
 /// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
-/// [`FnOnce`]. The function can later be called by calling the object's
-/// `run()` method. The function can be freed without calling it by calling
+/// [`FnOnce`]. The closure can later be called by calling the object's
+/// `run()` method. The closure can be freed without calling it by calling
 /// the object's `close()` method.
 ///
 /// If the closure panics, the unwind will be caught and thrown as an
@@ -87,8 +87,8 @@ pub fn fn_mut_runnable_local<'a: 'b, 'b>(
 }
 
 /// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
-/// [`FnMut`]. The function can later be called by calling the object's
-/// `run()` method. The function can be freed without calling it by calling
+/// [`FnMut`]. The closure can later be called by calling the object's
+/// `run()` method. The closure can be freed without calling it by calling
 /// the object's `close()` method.
 ///
 /// If the closure panics, the unwind will be caught and thrown as an
@@ -134,8 +134,8 @@ pub fn fn_runnable_local<'a: 'b, 'b>(
 }
 
 /// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given [`Fn`].
-/// The function can later be called by calling the object's `run()` method.
-/// The function can be freed without calling it by calling the object's
+/// The closure can later be called by calling the object's `run()` method.
+/// The closure can be freed without calling it by calling the object's
 /// `close()` method.
 ///
 /// If the closure panics, the unwind will be caught and thrown as an
