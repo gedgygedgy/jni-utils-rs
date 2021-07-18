@@ -4,7 +4,12 @@ use jni::{
     objects::{JClass, JObject, JThrowable},
     JNIEnv,
 };
-use std::{any::Any, convert::TryFrom, sync::MutexGuard};
+use std::{
+    any::Any,
+    convert::TryFrom,
+    panic::{catch_unwind, resume_unwind, UnwindSafe},
+    sync::MutexGuard,
+};
 
 /// Result from [`try_block`]. This object can be chained into
 /// [`catch`](TryCatchResult::catch) calls to catch exceptions. When finished
@@ -173,6 +178,11 @@ impl<'a: 'b, 'b> JPanicException<'a, 'b> {
     pub fn take(&self) -> Result<Box<dyn Any + Send + 'static>, Error> {
         self.env.take_rust_field(self.internal, "any")
     }
+
+    /// Resumes unwinding using the [`Any`] associated with the exception.
+    pub fn resume_unwind(&self) -> Result<(), Error> {
+        resume_unwind(self.take()?);
+    }
 }
 
 impl<'a: 'b, 'b> TryFrom<JPanicException<'a, 'b>> for Box<dyn Any + Send + 'static> {
@@ -195,6 +205,41 @@ impl<'a: 'b, 'b> ::std::ops::Deref for JPanicException<'a, 'b> {
     fn deref(&self) -> &Self::Target {
         &self.internal
     }
+}
+
+/// Calls the given closure. If it panics, catch the unwind, wrap it in a
+/// `io.github.gedgygedgy.rust.panic.PanicException`, and throw it.
+///
+/// # Arguments
+///
+/// * `env` - Java environment to use.
+/// * `f` - Closure to call.
+pub fn throw_unwind<'a: 'b, 'b, R>(
+    env: &'b JNIEnv<'a>,
+    f: impl FnOnce() -> R + UnwindSafe,
+) -> Result<R, Result<(), Error>> {
+    catch_unwind(f).map_err(|e| {
+        let old_ex = if env.exception_check()? {
+            let ex = env.exception_occurred()?;
+            env.exception_clear()?;
+            Some(ex)
+        } else {
+            None
+        };
+        let ex = JPanicException::new(env, e)?;
+
+        if let Some(old_ex) = old_ex {
+            env.call_method(
+                ex.clone(),
+                "addSuppressed",
+                "(Ljava/lang/Throwable;)V",
+                &[old_ex.into()],
+            )?;
+        }
+        let ex: JThrowable = ex.into();
+        env.throw(ex)?;
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -457,7 +502,7 @@ mod test {
                 .into();
             let str = JavaStr::from_env(env, msg).unwrap();
             assert_eq!(str.to_str().unwrap(), STATIC_MSG);
-        })
+        });
     }
 
     #[test]
@@ -485,7 +530,7 @@ mod test {
 
             let any: Box<dyn Any + Send> = ex.take().unwrap();
             assert_eq!(*any.downcast::<String>().unwrap(), STRING_MSG);
-        })
+        });
     }
 
     #[test]
@@ -510,6 +555,94 @@ mod test {
 
             let any: Box<dyn Any + Send> = ex.try_into().unwrap();
             assert_eq!(*any.downcast::<i32>().unwrap(), 42);
-        })
+        });
+    }
+
+    #[test]
+    fn test_throw_unwind_ok() {
+        test_utils::JVM_ENV.with(|env| {
+            let result = super::throw_unwind(env, || 42).unwrap();
+            assert_eq!(result, 42);
+            assert!(!env.exception_check().unwrap());
+        });
+    }
+
+    #[test]
+    fn test_throw_unwind_panic() {
+        test_utils::JVM_ENV.with(|env| {
+            super::throw_unwind(env, || panic!("This is a panic"))
+                .unwrap_err()
+                .unwrap();
+            assert!(env.exception_check().unwrap());
+            let ex = env.exception_occurred().unwrap();
+            env.exception_clear().unwrap();
+            assert!(env
+                .is_instance_of(ex, "io/github/gedgygedgy/rust/panic/PanicException")
+                .unwrap());
+
+            let suppressed_list = env
+                .call_method(ex, "getSuppressed", "()[Ljava/lang/Throwable;", &[])
+                .unwrap()
+                .l()
+                .unwrap();
+            assert_eq!(
+                env.get_array_length(suppressed_list.into_inner()).unwrap(),
+                0
+            );
+
+            let ex = super::JPanicException::from_env(env, ex).unwrap();
+            let any = ex.take().unwrap();
+            let str = any.downcast::<&str>().unwrap();
+            assert_eq!(*str, "This is a panic");
+        });
+    }
+
+    #[test]
+    fn test_throw_unwind_panic_suppress() {
+        test_utils::JVM_ENV.with(|env| {
+            let old_ex: JThrowable = env
+                .new_object("java/lang/Exception", "()V", &[])
+                .unwrap()
+                .into();
+            env.throw(old_ex).unwrap();
+
+            super::throw_unwind(env, || panic!("This is a panic"))
+                .unwrap_err()
+                .unwrap();
+            assert!(env.exception_check().unwrap());
+            let ex = env.exception_occurred().unwrap();
+            env.exception_clear().unwrap();
+            assert!(env
+                .is_instance_of(ex, "io/github/gedgygedgy/rust/panic/PanicException")
+                .unwrap());
+
+            let suppressed_list = env
+                .call_method(ex, "getSuppressed", "()[Ljava/lang/Throwable;", &[])
+                .unwrap()
+                .l()
+                .unwrap();
+            assert_eq!(
+                env.get_array_length(suppressed_list.into_inner()).unwrap(),
+                1
+            );
+            let suppressed_ex = env
+                .get_object_array_element(suppressed_list.into_inner(), 0)
+                .unwrap();
+            assert!(env.is_same_object(old_ex, suppressed_ex).unwrap());
+
+            let ex = super::JPanicException::from_env(env, ex).unwrap();
+            let any = ex.take().unwrap();
+            let str = any.downcast::<&str>().unwrap();
+            assert_eq!(*str, "This is a panic");
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "This is a panic")]
+    fn test_panic_exception_resume_unwind() {
+        test_utils::JVM_ENV.with(|env| {
+            let ex = super::JPanicException::new(env, Box::new("This is a panic")).unwrap();
+            ex.resume_unwind().unwrap();
+        });
     }
 }
