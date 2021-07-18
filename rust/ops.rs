@@ -357,15 +357,14 @@ mod test {
             let runnable = super::fn_once_runnable(env, f).unwrap();
             test_data(&data, 0, 2);
 
-            let thread = env
-                .new_object(
-                    "java/lang/Thread",
-                    "(Ljava/lang/Runnable;)V",
-                    &[runnable.into()],
-                )
-                .unwrap();
-            env.call_method(thread, "start", "()V", &[]).unwrap();
-            env.call_method(thread, "join", "()V", &[]).unwrap();
+            let runnable = env.new_global_ref(runnable).unwrap();
+            let thread = std::thread::spawn(move || {
+                test_utils::JVM_ENV.with(|env| {
+                    env.call_method(runnable.as_obj(), "run", "()V", &[])
+                        .unwrap();
+                });
+            });
+            thread.join().unwrap();
             test_data(&data, 1, 1);
         });
     }
@@ -513,42 +512,34 @@ mod test {
             let runnable = env.new_global_ref(runnable).unwrap();
             test_data_local(&data, 0, 2);
 
-            let runnable = super::fn_runnable(env, move |env, _obj| {
-                let value = crate::exceptions::try_block(env, || {
-                    env.call_method(runnable.as_obj(), "run", "()V", &[])?;
-                    Ok(false)
-                })
-                .catch(
-                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
-                    |_ex| Ok(true),
-                )
-                .result()
-                .unwrap();
-                assert!(value);
+            let thread = std::thread::spawn(move || {
+                test_utils::JVM_ENV.with(|env| {
+                    let value = crate::exceptions::try_block(env, || {
+                        env.call_method(runnable.as_obj(), "run", "()V", &[])?;
+                        Ok(false)
+                    })
+                    .catch(
+                        "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                        |_ex| Ok(true),
+                    )
+                    .result()
+                    .unwrap();
+                    assert!(value);
 
-                let value = crate::exceptions::try_block(env, || {
-                    env.call_method(runnable.as_obj(), "close", "()V", &[])?;
-                    Ok(false)
-                })
-                .catch(
-                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
-                    |_ex| Ok(true),
-                )
-                .result()
-                .unwrap();
-                assert!(value);
-            })
-            .unwrap();
-
-            let thread = env
-                .new_object(
-                    "java/lang/Thread",
-                    "(Ljava/lang/Runnable;)V",
-                    &[runnable.into()],
-                )
-                .unwrap();
-            env.call_method(thread, "start", "()V", &[]).unwrap();
-            env.call_method(thread, "join", "()V", &[]).unwrap();
+                    let value = crate::exceptions::try_block(env, || {
+                        env.call_method(runnable.as_obj(), "close", "()V", &[])?;
+                        Ok(false)
+                    })
+                    .catch(
+                        "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                        |_ex| Ok(true),
+                    )
+                    .result()
+                    .unwrap();
+                    assert!(value);
+                });
+            });
+            thread.join().unwrap();
             test_data_local(&data, 0, 2);
         });
     }
@@ -630,15 +621,14 @@ mod test {
             let runnable = super::fn_mut_runnable(env, f).unwrap();
             test_data(&data, 0, 2);
 
-            let thread = env
-                .new_object(
-                    "java/lang/Thread",
-                    "(Ljava/lang/Runnable;)V",
-                    &[runnable.into()],
-                )
-                .unwrap();
-            env.call_method(thread, "start", "()V", &[]).unwrap();
-            env.call_method(thread, "join", "()V", &[]).unwrap();
+            let runnable = env.new_global_ref(runnable).unwrap();
+            let thread = std::thread::spawn(move || {
+                test_utils::JVM_ENV.with(|env| {
+                    env.call_method(runnable.as_obj(), "run", "()V", &[])
+                        .unwrap();
+                });
+            });
+            thread.join().unwrap();
             test_data(&data, 1, 2);
         });
     }
@@ -759,42 +749,34 @@ mod test {
             let runnable = env.new_global_ref(runnable).unwrap();
             test_data_local(&data, 0, 2);
 
-            let runnable = super::fn_runnable(env, move |env, _obj| {
-                let value = crate::exceptions::try_block(env, || {
-                    env.call_method(runnable.as_obj(), "run", "()V", &[])?;
-                    Ok(false)
-                })
-                .catch(
-                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
-                    |_ex| Ok(true),
-                )
-                .result()
-                .unwrap();
-                assert!(value);
+            let thread = std::thread::spawn(move || {
+                test_utils::JVM_ENV.with(|env| {
+                    let value = crate::exceptions::try_block(env, || {
+                        env.call_method(runnable.as_obj(), "run", "()V", &[])?;
+                        Ok(false)
+                    })
+                    .catch(
+                        "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                        |_ex| Ok(true),
+                    )
+                    .result()
+                    .unwrap();
+                    assert!(value);
 
-                let value = crate::exceptions::try_block(env, || {
-                    env.call_method(runnable.as_obj(), "close", "()V", &[])?;
-                    Ok(false)
-                })
-                .catch(
-                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
-                    |_ex| Ok(true),
-                )
-                .result()
-                .unwrap();
-                assert!(value);
-            })
-            .unwrap();
-
-            let thread = env
-                .new_object(
-                    "java/lang/Thread",
-                    "(Ljava/lang/Runnable;)V",
-                    &[runnable.into()],
-                )
-                .unwrap();
-            env.call_method(thread, "start", "()V", &[]).unwrap();
-            env.call_method(thread, "join", "()V", &[]).unwrap();
+                    let value = crate::exceptions::try_block(env, || {
+                        env.call_method(runnable.as_obj(), "close", "()V", &[])?;
+                        Ok(false)
+                    })
+                    .catch(
+                        "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                        |_ex| Ok(true),
+                    )
+                    .result()
+                    .unwrap();
+                    assert!(value);
+                });
+            });
+            thread.join().unwrap();
             test_data_local(&data, 0, 2);
         });
     }
@@ -876,15 +858,14 @@ mod test {
             let runnable = super::fn_runnable(env, f).unwrap();
             test_data(&data, 0, 2);
 
-            let thread = env
-                .new_object(
-                    "java/lang/Thread",
-                    "(Ljava/lang/Runnable;)V",
-                    &[runnable.into()],
-                )
-                .unwrap();
-            env.call_method(thread, "start", "()V", &[]).unwrap();
-            env.call_method(thread, "join", "()V", &[]).unwrap();
+            let runnable = env.new_global_ref(runnable).unwrap();
+            let thread = std::thread::spawn(move || {
+                test_utils::JVM_ENV.with(|env| {
+                    env.call_method(runnable.as_obj(), "run", "()V", &[])
+                        .unwrap();
+                });
+            });
+            thread.join().unwrap();
             test_data(&data, 1, 2);
         });
     }
@@ -1038,42 +1019,34 @@ mod test {
             let runnable = env.new_global_ref(runnable).unwrap();
             test_data_local(&data, 0, 2);
 
-            let runnable = super::fn_runnable(env, move |env, _obj| {
-                let value = crate::exceptions::try_block(env, || {
-                    env.call_method(runnable.as_obj(), "run", "()V", &[])?;
-                    Ok(false)
-                })
-                .catch(
-                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
-                    |_ex| Ok(true),
-                )
-                .result()
-                .unwrap();
-                assert!(value);
+            let thread = std::thread::spawn(move || {
+                test_utils::JVM_ENV.with(|env| {
+                    let value = crate::exceptions::try_block(env, || {
+                        env.call_method(runnable.as_obj(), "run", "()V", &[])?;
+                        Ok(false)
+                    })
+                    .catch(
+                        "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                        |_ex| Ok(true),
+                    )
+                    .result()
+                    .unwrap();
+                    assert!(value);
 
-                let value = crate::exceptions::try_block(env, || {
-                    env.call_method(runnable.as_obj(), "close", "()V", &[])?;
-                    Ok(false)
-                })
-                .catch(
-                    "io/github/gedgygedgy/rust/thread/LocalThreadException",
-                    |_ex| Ok(true),
-                )
-                .result()
-                .unwrap();
-                assert!(value);
-            })
-            .unwrap();
-
-            let thread = env
-                .new_object(
-                    "java/lang/Thread",
-                    "(Ljava/lang/Runnable;)V",
-                    &[runnable.into()],
-                )
-                .unwrap();
-            env.call_method(thread, "start", "()V", &[]).unwrap();
-            env.call_method(thread, "join", "()V", &[]).unwrap();
+                    let value = crate::exceptions::try_block(env, || {
+                        env.call_method(runnable.as_obj(), "close", "()V", &[])?;
+                        Ok(false)
+                    })
+                    .catch(
+                        "io/github/gedgygedgy/rust/thread/LocalThreadException",
+                        |_ex| Ok(true),
+                    )
+                    .result()
+                    .unwrap();
+                    assert!(value);
+                });
+            });
+            thread.join().unwrap();
             test_data_local(&data, 0, 2);
         });
     }
