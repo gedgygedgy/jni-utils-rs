@@ -420,24 +420,20 @@ mod test {
         test_utils::JVM_ENV.with(|env| {
             let runnable =
                 super::fn_once_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
-            if let jni::errors::Error::JavaException =
-                env.call_method(runnable, "run", "()V", &[]).unwrap_err()
-            {
-            } else {
-                panic!("JavaException not found");
-            }
-
-            assert!(env.exception_check().unwrap());
-            let ex = env.exception_occurred().unwrap();
-            env.exception_clear().unwrap();
-            assert!(env
-                .is_instance_of(ex, "io/github/gedgygedgy/rust/panic/PanicException")
-                .unwrap());
-
-            let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
-            let any = ex.take().unwrap();
-            let str = any.downcast::<&str>().unwrap();
-            assert_eq!(*str, "This is a panic");
+            let result = try_block(env, || {
+                env.call_method(runnable, "run", "()V", &[])?;
+                Ok(false)
+            })
+            .catch("io/github/gedgygedgy/rust/panic/PanicException", |ex| {
+                let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+                let any = ex.take().unwrap();
+                let str = any.downcast::<&str>().unwrap();
+                assert_eq!(*str, "This is a panic");
+                Ok(true)
+            })
+            .result()
+            .unwrap();
+            assert!(result);
         });
     }
 
@@ -657,24 +653,20 @@ mod test {
     fn test_fn_mut_panic() {
         test_utils::JVM_ENV.with(|env| {
             let runnable = super::fn_mut_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
-            if let jni::errors::Error::JavaException =
-                env.call_method(runnable, "run", "()V", &[]).unwrap_err()
-            {
-            } else {
-                panic!("JavaException not found");
-            }
-
-            assert!(env.exception_check().unwrap());
-            let ex = env.exception_occurred().unwrap();
-            env.exception_clear().unwrap();
-            assert!(env
-                .is_instance_of(ex, "io/github/gedgygedgy/rust/panic/PanicException")
-                .unwrap());
-
-            let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
-            let any = ex.take().unwrap();
-            let str = any.downcast::<&str>().unwrap();
-            assert_eq!(*str, "This is a panic");
+            let result = try_block(env, || {
+                env.call_method(runnable, "run", "()V", &[])?;
+                Ok(false)
+            })
+            .catch("io/github/gedgygedgy/rust/panic/PanicException", |ex| {
+                let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+                let any = ex.take().unwrap();
+                let str = any.downcast::<&str>().unwrap();
+                assert_eq!(*str, "This is a panic");
+                Ok(true)
+            })
+            .result()
+            .unwrap();
+            assert!(result);
         });
     }
 
@@ -927,24 +919,20 @@ mod test {
     fn test_fn_panic() {
         test_utils::JVM_ENV.with(|env| {
             let runnable = super::fn_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
-            if let jni::errors::Error::JavaException =
-                env.call_method(runnable, "run", "()V", &[]).unwrap_err()
-            {
-            } else {
-                panic!("JavaException not found");
-            }
-
-            assert!(env.exception_check().unwrap());
-            let ex = env.exception_occurred().unwrap();
-            env.exception_clear().unwrap();
-            assert!(env
-                .is_instance_of(ex, "io/github/gedgygedgy/rust/panic/PanicException")
-                .unwrap());
-
-            let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
-            let any = ex.take().unwrap();
-            let str = any.downcast::<&str>().unwrap();
-            assert_eq!(*str, "This is a panic");
+            let result = try_block(env, || {
+                env.call_method(runnable, "run", "()V", &[])?;
+                Ok(false)
+            })
+            .catch("io/github/gedgygedgy/rust/panic/PanicException", |ex| {
+                let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+                let any = ex.take().unwrap();
+                let str = any.downcast::<&str>().unwrap();
+                assert_eq!(*str, "This is a panic");
+                Ok(true)
+            })
+            .result()
+            .unwrap();
+            assert!(result);
         });
     }
 
