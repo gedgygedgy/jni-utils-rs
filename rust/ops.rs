@@ -407,6 +407,27 @@ mod test {
     }
 
     #[test]
+    fn test_fn_once_close_self() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
+
+            let runnable = super::fn_once_runnable(env, move |env, obj| {
+                env.call_method(obj, "close", "()V", &[]).unwrap();
+                f(env, obj);
+            })
+            .unwrap();
+            test_data(&data, 0, 2);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
+        });
+    }
+
+    #[test]
     fn test_fn_once_local_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn_local();
@@ -605,6 +626,27 @@ mod test {
             let any = ex.take().unwrap();
             let str = any.downcast::<&str>().unwrap();
             assert_eq!(*str, "This is a panic");
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_close_self() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
+
+            let runnable = super::fn_mut_runnable(env, move |env, obj| {
+                env.call_method(obj, "close", "()V", &[]).unwrap();
+                f(env, obj);
+            })
+            .unwrap();
+            test_data(&data, 0, 2);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
         });
     }
 
@@ -840,6 +882,27 @@ mod test {
             let any = ex.take().unwrap();
             let str = any.downcast::<&str>().unwrap();
             assert_eq!(*str, "This is a panic");
+        });
+    }
+
+    #[test]
+    fn test_fn_close_self() {
+        test_utils::JVM_ENV.with(|env| {
+            let (data, f) = create_test_fn();
+            test_data(&data, 0, 2);
+
+            let runnable = super::fn_runnable(env, move |env, obj| {
+                env.call_method(obj, "close", "()V", &[]).unwrap();
+                f(env, obj);
+            })
+            .unwrap();
+            test_data(&data, 0, 2);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
+
+            env.call_method(runnable, "run", "()V", &[]).unwrap();
+            test_data(&data, 1, 1);
         });
     }
 
