@@ -1,8 +1,5 @@
 use ::jni::{errors::Result, objects::JObject, JNIEnv};
-use std::{
-    panic::{RefUnwindSafe, UnwindSafe},
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 struct SendSyncWrapper<T>(T);
 
@@ -11,7 +8,7 @@ unsafe impl<T> Sync for SendSyncWrapper<T> {}
 
 fn fn_once_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
     let mutex = Mutex::new(Some(f));
@@ -39,7 +36,7 @@ fn fn_once_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_once_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
 ) -> Result<JObject<'a>> {
     fn_once_runnable_internal(env, f, true)
 }
@@ -56,14 +53,14 @@ pub fn fn_once_runnable_local<'a: 'b, 'b>(
 /// call will be a no-op.
 pub fn fn_once_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + Send + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
 ) -> Result<JObject<'a>> {
     fn_once_runnable_internal(env, f, false)
 }
 
 fn fn_mut_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
     let mutex = Mutex::new(f);
@@ -84,7 +81,7 @@ fn fn_mut_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_mut_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
 ) -> Result<JObject<'a>> {
     fn_mut_runnable_internal(env, f, true)
 }
@@ -103,22 +100,19 @@ pub fn fn_mut_runnable_local<'a: 'b, 'b>(
 /// deadlock.
 pub fn fn_mut_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + Send + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
 ) -> Result<JObject<'a>> {
     fn_mut_runnable_internal(env, f, false)
 }
 
-type FnWrapper = SendSyncWrapper<
-    Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + UnwindSafe + RefUnwindSafe + 'static>,
->;
+type FnWrapper = SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + 'static>>;
 
 fn fn_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe> =
-        Arc::from(f);
+    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)> = Arc::from(f);
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
 
@@ -134,7 +128,7 @@ fn fn_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
 ) -> Result<JObject<'a>> {
     fn_runnable_internal(env, f, true)
 }
@@ -150,12 +144,7 @@ pub fn fn_runnable_local<'a: 'b, 'b>(
 /// It is safe to call the object's `run()` method recursively.
 pub fn fn_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)
-        + UnwindSafe
-        + RefUnwindSafe
-        + Send
-        + Sync
-        + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static,
 ) -> Result<JObject<'a>> {
     fn_runnable_internal(env, f, false)
 }
@@ -165,8 +154,10 @@ pub(crate) mod jni {
     use jni::{errors::Result, objects::JObject, JNIEnv, NativeMethod};
 
     extern "C" fn fn_run_internal(env: JNIEnv, obj: JObject) {
+        use std::panic::AssertUnwindSafe;
+
         let arc = if let Ok(f) = env.get_rust_field::<_, _, FnWrapper>(obj, "data") {
-            f.0.clone()
+            AssertUnwindSafe(f.0.clone())
         } else {
             return;
         };
@@ -207,21 +198,13 @@ mod test {
     use jni::{objects::JObject, JNIEnv};
     use std::{
         cell::RefCell,
-        panic::{RefUnwindSafe, UnwindSafe},
         rc::Rc,
         sync::{Arc, Mutex},
     };
 
     fn create_test_fn<'a: 'b, 'b>() -> (
         Arc<Mutex<u32>>,
-        Box<
-            dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)
-                + UnwindSafe
-                + RefUnwindSafe
-                + Send
-                + Sync
-                + 'static,
-        >,
+        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static>,
     ) {
         let arc = Arc::new(Mutex::new(0));
         let arc2 = arc.clone();
@@ -236,12 +219,10 @@ mod test {
 
     fn create_test_fn_local<'a: 'b, 'b>() -> (
         Rc<RefCell<u32>>,
-        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static>,
+        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static>,
     ) {
-        use std::panic::AssertUnwindSafe;
-
         let rc = Rc::new(RefCell::new(0));
-        let rc2 = AssertUnwindSafe(rc.clone());
+        let rc2 = rc.clone();
         (
             rc,
             Box::new(move |_e, _o| {
