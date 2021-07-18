@@ -202,9 +202,9 @@ mod test {
         sync::{Arc, Mutex},
     };
 
-    fn create_test_fn<'a: 'b, 'b>() -> (
+    fn create_test_fn() -> (
         Arc<Mutex<u32>>,
-        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static>,
+        Box<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + Send + Sync + 'static>,
     ) {
         let arc = Arc::new(Mutex::new(0));
         let arc2 = arc.clone();
@@ -217,9 +217,9 @@ mod test {
         )
     }
 
-    fn create_test_fn_local<'a: 'b, 'b>() -> (
+    fn create_test_fn_local() -> (
         Rc<RefCell<u32>>,
-        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static>,
+        Box<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + 'static>,
     ) {
         let rc = Rc::new(RefCell::new(0));
         let rc2 = rc.clone();
