@@ -1,5 +1,8 @@
 use ::jni::{errors::Result, objects::JObject, JNIEnv};
-use std::sync::{Arc, Mutex};
+use std::{
+    panic::{RefUnwindSafe, UnwindSafe},
+    sync::{Arc, Mutex},
+};
 
 struct SendSyncWrapper<T>(T);
 
@@ -8,7 +11,7 @@ unsafe impl<T> Sync for SendSyncWrapper<T> {}
 
 fn fn_once_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
     let mutex = Mutex::new(Some(f));
@@ -36,7 +39,7 @@ fn fn_once_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_once_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + 'static,
 ) -> Result<JObject<'a>> {
     fn_once_runnable_internal(env, f, true)
 }
@@ -46,18 +49,21 @@ pub fn fn_once_runnable_local<'a: 'b, 'b>(
 /// `run()` method. The function can be freed without calling it by calling
 /// the object's `close()` method.
 ///
+/// If the closure panics, the unwind will be caught and thrown as an
+/// `io.github.gedgygedgy.rust.panic.PanicException`.
+///
 /// It is safe to call the object's `run()` method recursively, but the second
 /// call will be a no-op.
 pub fn fn_once_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + Send + 'static,
 ) -> Result<JObject<'a>> {
     fn_once_runnable_internal(env, f, false)
 }
 
 fn fn_mut_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
     let mutex = Mutex::new(f);
@@ -78,7 +84,7 @@ fn fn_mut_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_mut_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + 'static,
 ) -> Result<JObject<'a>> {
     fn_mut_runnable_internal(env, f, true)
 }
@@ -88,25 +94,29 @@ pub fn fn_mut_runnable_local<'a: 'b, 'b>(
 /// `run()` method. The function can be freed without calling it by calling
 /// the object's `close()` method.
 ///
+/// If the closure panics, the unwind will be caught and thrown as an
+/// `io.github.gedgygedgy.rust.panic.PanicException`.
+///
 /// Unlike [`fn_runnable`] and [`fn_once_runnable`], it is not safe to call the
 /// resulting object's `run()` method recursively. The [`FnMut`] is managed
 /// with an internal [`Mutex`], so calling `run()` recursively will result in a
 /// deadlock.
 pub fn fn_mut_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + Send + 'static,
 ) -> Result<JObject<'a>> {
     fn_mut_runnable_internal(env, f, false)
 }
 
-type FnWrapper = SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + 'static>>;
+type FnWrapper =
+    SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + RefUnwindSafe + 'static>>;
 
 fn fn_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)> = Arc::from(f);
+    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe> = Arc::from(f);
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
 
@@ -122,7 +132,7 @@ fn fn_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + 'static,
 ) -> Result<JObject<'a>> {
     fn_runnable_internal(env, f, true)
 }
@@ -132,10 +142,13 @@ pub fn fn_runnable_local<'a: 'b, 'b>(
 /// The function can be freed without calling it by calling the object's
 /// `close()` method.
 ///
+/// If the closure panics, the unwind will be caught and thrown as an
+/// `io.github.gedgygedgy.rust.panic.PanicException`.
+///
 /// It is safe to call the object's `run()` method recursively.
 pub fn fn_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + Send + Sync + 'static,
 ) -> Result<JObject<'a>> {
     fn_runnable_internal(env, f, false)
 }
@@ -150,7 +163,7 @@ pub(crate) mod jni {
         } else {
             return;
         };
-        arc(&env, obj);
+        let _ = crate::exceptions::throw_unwind(&env, || arc(&env, obj));
     }
 
     extern "C" fn fn_close_internal(env: JNIEnv, obj: JObject) {
@@ -187,13 +200,21 @@ mod test {
     use jni::{objects::JObject, JNIEnv};
     use std::{
         cell::RefCell,
+        panic::{RefUnwindSafe, UnwindSafe},
         rc::Rc,
         sync::{Arc, Mutex},
     };
 
     fn create_test_fn<'a: 'b, 'b>() -> (
         Arc<Mutex<u32>>,
-        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static>,
+        Box<
+            dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)
+                + UnwindSafe
+                + RefUnwindSafe
+                + Send
+                + Sync
+                + 'static,
+        >,
     ) {
         let arc = Arc::new(Mutex::new(0));
         let arc2 = arc.clone();
@@ -208,10 +229,12 @@ mod test {
 
     fn create_test_fn_local<'a: 'b, 'b>() -> (
         Rc<RefCell<u32>>,
-        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static>,
+        Box<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static>,
     ) {
+        use std::panic::AssertUnwindSafe;
+
         let rc = Rc::new(RefCell::new(0));
-        let rc2 = rc.clone();
+        let rc2 = AssertUnwindSafe(rc.clone());
         (
             rc,
             Box::new(move |_e, _o| {
@@ -367,6 +390,32 @@ mod test {
             let guard = arc.lock().unwrap();
             assert!(*guard);
         })
+    }
+
+    #[test]
+    fn test_fn_once_panic() {
+        test_utils::JVM_ENV.with(|env| {
+            let runnable =
+                super::fn_once_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
+            if let jni::errors::Error::JavaException =
+                env.call_method(runnable, "run", "()V", &[]).unwrap_err()
+            {
+            } else {
+                panic!("JavaException not found");
+            }
+
+            assert!(env.exception_check().unwrap());
+            let ex = env.exception_occurred().unwrap();
+            env.exception_clear().unwrap();
+            assert!(env
+                .is_instance_of(ex, "io/github/gedgygedgy/rust/panic/PanicException")
+                .unwrap());
+
+            let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+            let any = ex.take().unwrap();
+            let str = any.downcast::<&str>().unwrap();
+            assert_eq!(*str, "This is a panic");
+        });
     }
 
     #[test]
@@ -543,6 +592,31 @@ mod test {
             }
 
             env.call_method(runnable, "run", "()V", &[]).unwrap();
+        });
+    }
+
+    #[test]
+    fn test_fn_mut_panic() {
+        test_utils::JVM_ENV.with(|env| {
+            let runnable = super::fn_mut_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
+            if let jni::errors::Error::JavaException =
+                env.call_method(runnable, "run", "()V", &[]).unwrap_err()
+            {
+            } else {
+                panic!("JavaException not found");
+            }
+
+            assert!(env.exception_check().unwrap());
+            let ex = env.exception_occurred().unwrap();
+            env.exception_clear().unwrap();
+            assert!(env
+                .is_instance_of(ex, "io/github/gedgygedgy/rust/panic/PanicException")
+                .unwrap());
+
+            let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+            let any = ex.take().unwrap();
+            let str = any.downcast::<&str>().unwrap();
+            assert_eq!(*str, "This is a panic");
         });
     }
 
@@ -754,6 +828,31 @@ mod test {
             let guard = arc.lock().unwrap();
             assert!(*guard);
         })
+    }
+
+    #[test]
+    fn test_fn_panic() {
+        test_utils::JVM_ENV.with(|env| {
+            let runnable = super::fn_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
+            if let jni::errors::Error::JavaException =
+                env.call_method(runnable, "run", "()V", &[]).unwrap_err()
+            {
+            } else {
+                panic!("JavaException not found");
+            }
+
+            assert!(env.exception_check().unwrap());
+            let ex = env.exception_occurred().unwrap();
+            env.exception_clear().unwrap();
+            assert!(env
+                .is_instance_of(ex, "io/github/gedgygedgy/rust/panic/PanicException")
+                .unwrap());
+
+            let ex = crate::exceptions::JPanicException::from_env(env, ex).unwrap();
+            let any = ex.take().unwrap();
+            let str = any.downcast::<&str>().unwrap();
+            assert_eq!(*str, "This is a panic");
+        });
     }
 
     #[test]
