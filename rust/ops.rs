@@ -63,7 +63,7 @@ pub fn fn_once_runnable<'a: 'b, 'b>(
 
 fn fn_mut_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
     let mutex = Mutex::new(f);
@@ -84,7 +84,7 @@ fn fn_mut_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_mut_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static,
 ) -> Result<JObject<'a>> {
     fn_mut_runnable_internal(env, f, true)
 }
@@ -103,20 +103,22 @@ pub fn fn_mut_runnable_local<'a: 'b, 'b>(
 /// deadlock.
 pub fn fn_mut_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + Send + 'static,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + Send + 'static,
 ) -> Result<JObject<'a>> {
     fn_mut_runnable_internal(env, f, false)
 }
 
-type FnWrapper =
-    SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + RefUnwindSafe + 'static>>;
+type FnWrapper = SendSyncWrapper<
+    Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + UnwindSafe + RefUnwindSafe + 'static>,
+>;
 
 fn fn_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe> = Arc::from(f);
+    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe> =
+        Arc::from(f);
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
 
@@ -132,7 +134,7 @@ fn fn_runnable_internal<'a: 'b, 'b>(
 /// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
 pub fn fn_runnable_local<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + UnwindSafe + RefUnwindSafe + 'static,
 ) -> Result<JObject<'a>> {
     fn_runnable_internal(env, f, true)
 }
@@ -148,7 +150,12 @@ pub fn fn_runnable_local<'a: 'b, 'b>(
 /// It is safe to call the object's `run()` method recursively.
 pub fn fn_runnable<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + RefUnwindSafe + Send + Sync + 'static,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)
+        + UnwindSafe
+        + RefUnwindSafe
+        + Send
+        + Sync
+        + 'static,
 ) -> Result<JObject<'a>> {
     fn_runnable_internal(env, f, false)
 }
