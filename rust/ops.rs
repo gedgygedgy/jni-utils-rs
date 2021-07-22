@@ -6,21 +6,17 @@ fn fn_once_runnable_internal<'a: 'b, 'b>(
     f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let mutex = Mutex::new(Some(f));
-    fn_runnable_internal(
+    let adapter = env.auto_local(fn_once_adapter(
         env,
-        move |env, obj| {
-            let f = {
-                let mut guard = mutex.lock().unwrap();
-                if let Some(f) = guard.take() {
-                    f
-                } else {
-                    return;
-                }
-            };
-            f(env, obj)
-        },
+        move |env, _obj1, obj2, _arg1, _arg2| f(env, obj2),
         local,
+    )?);
+
+    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
+    env.new_object(
+        &class,
+        "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
+        &[(&adapter).into()],
     )
 }
 
@@ -55,17 +51,20 @@ pub fn fn_once_runnable<'a: 'b, 'b>(
 
 fn fn_mut_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    mut f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let mutex = Mutex::new(f);
-    fn_runnable_internal(
+    let adapter = env.auto_local(fn_mut_adapter(
         env,
-        move |env, obj| {
-            let mut guard = mutex.lock().unwrap();
-            guard(env, obj)
-        },
+        move |env, _obj1, obj2, _arg1, _arg2| f(env, obj2),
         local,
+    )?);
+
+    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
+    env.new_object(
+        &class,
+        "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
+        &[(&adapter).into()],
     )
 }
 
@@ -105,17 +104,17 @@ fn fn_runnable_internal<'a: 'b, 'b>(
     f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let adapter = fn_adapter(
+    let adapter = env.auto_local(fn_adapter(
         env,
         move |env, _obj1, obj2, _arg1, _arg2| f(env, obj2),
         local,
-    )?;
+    )?);
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
     env.new_object(
         &class,
         "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
-        &[adapter.into()],
+        &[(&adapter).into()],
     )
 }
 
@@ -158,6 +157,47 @@ type FnWrapper = SendSyncWrapper<
             + 'static,
     >,
 >;
+
+fn fn_once_adapter<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>, JObject<'c>)
+        + 'static,
+    local: bool,
+) -> Result<JObject<'a>> {
+    let mutex = Mutex::new(Some(f));
+    fn_adapter(
+        env,
+        move |env, obj1, obj2, arg1, arg2| {
+            let f = {
+                let mut guard = mutex.lock().unwrap();
+                if let Some(f) = guard.take() {
+                    f
+                } else {
+                    return;
+                }
+            };
+            f(env, obj1, obj2, arg1, arg2)
+        },
+        local,
+    )
+}
+
+fn fn_mut_adapter<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>, JObject<'c>)
+        + 'static,
+    local: bool,
+) -> Result<JObject<'a>> {
+    let mutex = Mutex::new(f);
+    fn_adapter(
+        env,
+        move |env, obj1, obj2, arg1, arg2| {
+            let mut guard = mutex.lock().unwrap();
+            guard(env, obj1, obj2, arg1, arg2)
+        },
+        local,
+    )
+}
 
 fn fn_adapter<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
