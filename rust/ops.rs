@@ -1,149 +1,211 @@
 use ::jni::{errors::Result, objects::JObject, JNIEnv};
 use std::sync::{Arc, Mutex};
 
-fn fn_once_runnable_internal<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
-    local: bool,
-) -> Result<JObject<'a>> {
-    let adapter = env.auto_local(fn_once_adapter(
-        env,
-        move |env, _obj1, obj2, _arg1, _arg2| f(env, obj2),
-        local,
-    )?);
+macro_rules! define_fn_adapter {
+    (
+        fn_once: $fo:ident,
+        fn_once_local: $fol:ident,
+        fn_once_internal: $foi:ident,
+        fn_mut: $fm:ident,
+        fn_mut_local: $fml:ident,
+        fn_mut_internal: $fmi:ident,
+        fn: $f:ident,
+        fn_local: $fl:ident,
+        fn_internal: $fi:ident,
+        impl_class: $ic:literal,
+        doc_class: $dc:literal,
+        doc_method: $dm:literal,
+        doc_fn_once: $dfo:literal,
+        doc_fn: $df:literal,
+        doc_noop: $dnoop:literal,
+        signature: $closure_name:ident: impl for<'c, 'd> Fn$args:tt + 'static,
+        closure: $closure:expr,
+    ) => {
+        fn $foi<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            $closure_name: impl for<'c, 'd> FnOnce$args + 'static,
+            local: bool,
+        ) -> Result<JObject<'a>> {
+            let adapter = env.auto_local(fn_once_adapter(env, $closure, local)?);
+            let class = env.auto_local(env.find_class($ic)?);
+            env.new_object(
+                &class,
+                "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
+                &[(&adapter).into()],
+            )
+        }
 
-    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
-    env.new_object(
-        &class,
-        "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
-        &[(&adapter).into()],
-    )
+        #[doc = "Create an `"]
+        #[doc = $dc]
+        #[doc = "` from a given [`FnOnce`]. The closure can later be called "]
+        #[doc = "by calling the object's `"]
+        #[doc = $dm]
+        #[doc = "` method. The closure can be freed without calling it by "]
+        #[doc = "calling the object's `close()` method."]
+        #[doc = "\n\n"]
+        #[doc = "If the closure panics, the unwind will be caught and thrown "]
+        #[doc = "as an `io.github.gedgygedgy.rust.panic.PanicException`."]
+        #[doc = "\n\n"]
+        #[doc = "It is safe to call the object's `"]
+        #[doc = $dm]
+        #[doc = "` method recursively, but the second call will "]
+        #[doc = $dnoop]
+        #[doc = "."]
+        pub fn $fo<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            f: impl for<'c, 'd> FnOnce$args + Send + 'static,
+        ) -> Result<JObject<'a>> {
+            $foi(env, f, false)
+        }
+
+        #[doc = "Create an `"]
+        #[doc = $dc]
+        #[doc = "` from a given [`FnOnce`] without checking if it is "]
+        #[doc = "[`Send`]. Attempting to call `"]
+        #[doc = $dm]
+        #[doc = "` or `close()` on the resulting object from a thread other "]
+        #[doc = "than its origin thread will result in an "]
+        #[doc = "`io.github.gedgygedgy.rust.thread.LocalThreadException` "]
+        #[doc = "being thrown."]
+        pub fn $fol<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            f: impl for<'c, 'd> FnOnce$args + 'static,
+        ) -> Result<JObject<'a>> {
+            $foi(env, f, true)
+        }
+
+        fn $fmi<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            mut $closure_name: impl for<'c, 'd> FnMut$args + 'static,
+            local: bool,
+        ) -> Result<JObject<'a>> {
+            let adapter = env.auto_local(fn_mut_adapter(env, $closure, local)?);
+            let class = env.auto_local(env.find_class($ic)?);
+            env.new_object(
+                &class,
+                "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
+                &[(&adapter).into()],
+            )
+        }
+
+        #[doc = "Create an `"]
+        #[doc = $dc]
+        #[doc = "` from a given [`FnMut`]. The closure can later be called "]
+        #[doc = "by calling the object's `"]
+        #[doc = $dm]
+        #[doc = "` method. The closure can be freed without calling it by "]
+        #[doc = "calling the object's `close()` method."]
+        #[doc = "\n\n"]
+        #[doc = "If the closure panics, the unwind will be caught and thrown "]
+        #[doc = "as an `io.github.gedgygedgy.rust.panic.PanicException`."]
+        #[doc = "\n\n"]
+        #[doc = "Unlike [`"]
+        #[doc = $df]
+        #[doc = "`] and [`"]
+        #[doc = $dfo]
+        #[doc = "`], it is not safe to call the resulting object's `"]
+        #[doc = $dm]
+        #[doc = "` method recursively. The [`FnMut`] is managed with an "]
+        #[doc = "internal [`Mutex`], so calling `"]
+        #[doc = $dm]
+        #[doc = "` recursively will result in a deadlock."]
+        pub fn $fm<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            f: impl for<'c, 'd> FnMut$args + Send + 'static,
+        ) -> Result<JObject<'a>> {
+            $fmi(env, f, false)
+        }
+
+        #[doc = "Create an `"]
+        #[doc = $dc]
+        #[doc = "` from a given [`FnMut`] without checking if it is "]
+        #[doc = "[`Send`]. Attempting to call `"]
+        #[doc = $dm]
+        #[doc = "` or `close()` on the resulting object from a thread other "]
+        #[doc = "than its origin thread will result in an "]
+        #[doc = "`io.github.gedgygedgy.rust.thread.LocalThreadException` "]
+        #[doc = "being thrown."]
+        pub fn $fml<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            f: impl for<'c, 'd> FnMut$args + 'static,
+        ) -> Result<JObject<'a>> {
+            $fmi(env, f, true)
+        }
+
+        fn $fi<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            $closure_name: impl for<'c, 'd> Fn$args + 'static,
+            local: bool,
+        ) -> Result<JObject<'a>> {
+            let adapter = env.auto_local(fn_adapter(env, $closure, local)?);
+            let class = env.auto_local(env.find_class($ic)?);
+            env.new_object(
+                &class,
+                "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
+                &[(&adapter).into()],
+            )
+        }
+
+        #[doc = "Create an `"]
+        #[doc = $dc]
+        #[doc = "` from a given [`Fn`]. The closure can later be called by "]
+        #[doc = "calling the object's `"]
+        #[doc = $dm]
+        #[doc = "` method. The closure can be freed without calling it by "]
+        #[doc = "calling the object's `close()` method."]
+        #[doc = "\n\n"]
+        #[doc = "If the closure panics, the unwind will be caught and thrown "]
+        #[doc = "as an `io.github.gedgygedgy.rust.panic.PanicException`."]
+        #[doc = "\n\n"]
+        #[doc = "It is safe to call the object's `"]
+        #[doc = $dm]
+        #[doc = "` method recursively."]
+        pub fn $f<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            f: impl for<'c, 'd> Fn$args + Send + 'static,
+        ) -> Result<JObject<'a>> {
+            $fi(env, f, false)
+        }
+
+        #[doc = "Create an `"]
+        #[doc = $dc]
+        #[doc = "` from a given [`Fn`] without checking if it is [`Send`]. "]
+        #[doc = "Attempting to call `"]
+        #[doc = $dm]
+        #[doc = "` or `close()` on the resulting object from a thread other "]
+        #[doc = "than its origin thread will result in an "]
+        #[doc = "`io.github.gedgygedgy.rust.thread.LocalThreadException` "]
+        #[doc = "being thrown."]
+        pub fn $fl<'a: 'b, 'b>(
+            env: &'b JNIEnv<'a>,
+            f: impl for<'c, 'd> Fn$args + 'static,
+        ) -> Result<JObject<'a>> {
+            $fi(env, f, true)
+        }
+    };
 }
 
-/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
-/// [`FnOnce`] without checking if it is [`Send`]. Attempting to call `run()`
-/// or `close()` on the resulting object from a thread other than its origin
-/// thread will result in an
-/// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
-pub fn fn_once_runnable_local<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
-) -> Result<JObject<'a>> {
-    fn_once_runnable_internal(env, f, true)
-}
-
-/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
-/// [`FnOnce`]. The closure can later be called by calling the object's
-/// `run()` method. The closure can be freed without calling it by calling
-/// the object's `close()` method.
-///
-/// If the closure panics, the unwind will be caught and thrown as an
-/// `io.github.gedgygedgy.rust.panic.PanicException`.
-///
-/// It is safe to call the object's `run()` method recursively, but the second
-/// call will be a no-op.
-pub fn fn_once_runnable<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
-) -> Result<JObject<'a>> {
-    fn_once_runnable_internal(env, f, false)
-}
-
-fn fn_mut_runnable_internal<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    mut f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
-    local: bool,
-) -> Result<JObject<'a>> {
-    let adapter = env.auto_local(fn_mut_adapter(
-        env,
-        move |env, _obj1, obj2, _arg1, _arg2| f(env, obj2),
-        local,
-    )?);
-
-    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
-    env.new_object(
-        &class,
-        "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
-        &[(&adapter).into()],
-    )
-}
-
-/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
-/// [`FnMut`] without checking if it is [`Send`]. Attempting to call `run()`
-/// or `close()` on the resulting object from a thread other than its origin
-/// thread will result in an
-/// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
-pub fn fn_mut_runnable_local<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + 'static,
-) -> Result<JObject<'a>> {
-    fn_mut_runnable_internal(env, f, true)
-}
-
-/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given
-/// [`FnMut`]. The closure can later be called by calling the object's
-/// `run()` method. The closure can be freed without calling it by calling
-/// the object's `close()` method.
-///
-/// If the closure panics, the unwind will be caught and thrown as an
-/// `io.github.gedgygedgy.rust.panic.PanicException`.
-///
-/// Unlike [`fn_runnable`] and [`fn_once_runnable`], it is not safe to call the
-/// resulting object's `run()` method recursively. The [`FnMut`] is managed
-/// with an internal [`Mutex`], so calling `run()` recursively will result in a
-/// deadlock.
-pub fn fn_mut_runnable<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>) + Send + 'static,
-) -> Result<JObject<'a>> {
-    fn_mut_runnable_internal(env, f, false)
-}
-
-fn fn_runnable_internal<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
-    local: bool,
-) -> Result<JObject<'a>> {
-    let adapter = env.auto_local(fn_adapter(
-        env,
-        move |env, _obj1, obj2, _arg1, _arg2| f(env, obj2),
-        local,
-    )?);
-
-    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
-    env.new_object(
-        &class,
-        "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
-        &[(&adapter).into()],
-    )
-}
-
-/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given [`Fn`]
-/// without checking if it is [`Send`] or [`Sync`]. Attempting to call `run()`
-/// or `close()` on the resulting object from a thread other than its origin
-/// thread will result in an
-/// `io.github.gedgygedgy.rust.thread.LocalThreadException` being thrown.
-pub fn fn_runnable_local<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
-) -> Result<JObject<'a>> {
-    fn_runnable_internal(env, f, true)
-}
-
-/// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given [`Fn`].
-/// The closure can later be called by calling the object's `run()` method.
-/// The closure can be freed without calling it by calling the object's
-/// `close()` method.
-///
-/// If the closure panics, the unwind will be caught and thrown as an
-/// `io.github.gedgygedgy.rust.panic.PanicException`.
-///
-/// It is safe to call the object's `run()` method recursively.
-pub fn fn_runnable<'a: 'b, 'b>(
-    env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + Send + Sync + 'static,
-) -> Result<JObject<'a>> {
-    fn_runnable_internal(env, f, false)
+define_fn_adapter! {
+    fn_once: fn_once_runnable,
+    fn_once_local: fn_once_runnable_local,
+    fn_once_internal: fn_once_runnable_internal,
+    fn_mut: fn_mut_runnable,
+    fn_mut_local: fn_mut_runnable_local,
+    fn_mut_internal: fn_mut_runnable_internal,
+    fn: fn_runnable,
+    fn_local: fn_runnable_local,
+    fn_internal: fn_runnable_internal,
+    impl_class: "io/github/gedgygedgy/rust/ops/FnRunnableImpl",
+    doc_class: "io.github.gedgygedgy.rust.ops.FnRunnable",
+    doc_method: "run()",
+    doc_fn_once: "fn_once_runnable",
+    doc_fn: "fn_runnable",
+    doc_noop: "be a no-op",
+    signature: f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    closure: move |env, _obj1, obj2, _arg1, _arg2| {
+        f(env, obj2);
+        JObject::null()
+    },
 }
 
 struct SendSyncWrapper<T>(T);
@@ -153,14 +215,26 @@ unsafe impl<T> Sync for SendSyncWrapper<T> {}
 
 type FnWrapper = SendSyncWrapper<
     Arc<
-        dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>, JObject<'a>, JObject<'a>, JObject<'a>)
+        dyn for<'a, 'b> Fn(
+                &'b JNIEnv<'a>,
+                JObject<'a>,
+                JObject<'a>,
+                JObject<'a>,
+                JObject<'a>,
+            ) -> JObject<'a>
             + 'static,
     >,
 >;
 
 fn fn_once_adapter<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>, JObject<'c>)
+    f: impl for<'c, 'd> FnOnce(
+            &'d JNIEnv<'c>,
+            JObject<'c>,
+            JObject<'c>,
+            JObject<'c>,
+            JObject<'c>,
+        ) -> JObject<'c>
         + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
@@ -173,7 +247,7 @@ fn fn_once_adapter<'a: 'b, 'b>(
                 if let Some(f) = guard.take() {
                     f
                 } else {
-                    return;
+                    return JObject::null();
                 }
             };
             f(env, obj1, obj2, arg1, arg2)
@@ -184,7 +258,13 @@ fn fn_once_adapter<'a: 'b, 'b>(
 
 fn fn_mut_adapter<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> FnMut(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>, JObject<'c>)
+    f: impl for<'c, 'd> FnMut(
+            &'d JNIEnv<'c>,
+            JObject<'c>,
+            JObject<'c>,
+            JObject<'c>,
+            JObject<'c>,
+        ) -> JObject<'c>
         + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
@@ -201,11 +281,24 @@ fn fn_mut_adapter<'a: 'b, 'b>(
 
 fn fn_adapter<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
-    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>, JObject<'c>) + 'static,
+    f: impl for<'c, 'd> Fn(
+            &'d JNIEnv<'c>,
+            JObject<'c>,
+            JObject<'c>,
+            JObject<'c>,
+            JObject<'c>,
+        ) -> JObject<'c>
+        + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
     let arc: Arc<
-        dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>, JObject<'c>),
+        dyn for<'c, 'd> Fn(
+            &'d JNIEnv<'c>,
+            JObject<'c>,
+            JObject<'c>,
+            JObject<'c>,
+            JObject<'c>,
+        ) -> JObject<'c>,
     > = Arc::from(f);
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnAdapter")?);
@@ -219,21 +312,22 @@ pub(crate) mod jni {
     use super::FnWrapper;
     use jni::{errors::Result, objects::JObject, JNIEnv, NativeMethod};
 
-    extern "C" fn fn_adapter_call_internal(
-        env: JNIEnv,
-        obj1: JObject,
-        obj2: JObject,
-        arg1: JObject,
-        arg2: JObject,
-    ) {
+    extern "C" fn fn_adapter_call_internal<'a>(
+        env: JNIEnv<'a>,
+        obj1: JObject<'a>,
+        obj2: JObject<'a>,
+        arg1: JObject<'a>,
+        arg2: JObject<'a>,
+    ) -> JObject<'a> {
         use std::panic::AssertUnwindSafe;
 
         let arc = if let Ok(f) = env.get_rust_field::<_, _, FnWrapper>(obj1, "data") {
             AssertUnwindSafe(f.0.clone())
         } else {
-            return;
+            return JObject::null();
         };
-        let _ = crate::exceptions::throw_unwind(&env, || arc(&env, obj1, obj2, arg1, arg2));
+        crate::exceptions::throw_unwind(&env, || arc(&env, obj1, obj2, arg1, arg2))
+            .unwrap_or_else(|_| JObject::null())
     }
 
     extern "C" fn fn_adapter_close_internal(env: JNIEnv, obj: JObject) {
