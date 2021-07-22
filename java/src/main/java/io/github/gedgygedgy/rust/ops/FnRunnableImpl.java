@@ -5,26 +5,19 @@ import io.github.gedgygedgy.rust.thread.LocalThreadChecker;
 import java.io.Closeable;
 
 final class FnRunnableImpl implements FnRunnable {
-    private final LocalThreadChecker threadChecker;
-    private long data;
+    private final FnAdapter<FnRunnableImpl, Void, Void, Void> adapter;
 
-    private FnRunnableImpl(boolean local) {
-        this.threadChecker = new LocalThreadChecker(local);
+    private FnRunnableImpl(FnAdapter<FnRunnableImpl, Void, Void, Void> adapter) {
+        this.adapter = adapter;
     }
 
     @Override
     public void run() {
-        this.threadChecker.check();
-        this.runInternal();
+        this.adapter.call(this, null, null);
     }
-
-    private native void runInternal();
 
     @Override
     public void close() {
-        this.threadChecker.check();
-        this.closeInternal();
+        this.adapter.close();
     }
-
-    private native void closeInternal();
 }

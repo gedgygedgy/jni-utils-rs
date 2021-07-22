@@ -1,11 +1,6 @@
 use ::jni::{errors::Result, objects::JObject, JNIEnv};
 use std::sync::{Arc, Mutex};
 
-struct SendSyncWrapper<T>(T);
-
-unsafe impl<T> Send for SendSyncWrapper<T> {}
-unsafe impl<T> Sync for SendSyncWrapper<T> {}
-
 fn fn_once_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
     f: impl for<'c, 'd> FnOnce(&'d JNIEnv<'c>, JObject<'c>) + 'static,
@@ -105,20 +100,23 @@ pub fn fn_mut_runnable<'a: 'b, 'b>(
     fn_mut_runnable_internal(env, f, false)
 }
 
-type FnWrapper = SendSyncWrapper<Arc<dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>) + 'static>>;
-
 fn fn_runnable_internal<'a: 'b, 'b>(
     env: &'b JNIEnv<'a>,
     f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
     local: bool,
 ) -> Result<JObject<'a>> {
-    let arc: Arc<dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>)> = Arc::from(f);
+    let adapter = fn_adapter(
+        env,
+        move |env, _obj1, obj2, _arg1, _arg2| f(env, obj2),
+        local,
+    )?;
 
     let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
-
-    let obj = env.new_object(&class, "(Z)V", &[local.into()])?;
-    env.set_rust_field::<_, _, FnWrapper>(obj, "data", SendSyncWrapper(arc))?;
-    Ok(obj)
+    env.new_object(
+        &class,
+        "(Lio/github/gedgygedgy/rust/ops/FnAdapter;)V",
+        &[adapter.into()],
+    )
 }
 
 /// Create an `io.github.gedgygedgy.rust.ops.FnRunnable` from a given [`Fn`]
@@ -149,22 +147,56 @@ pub fn fn_runnable<'a: 'b, 'b>(
     fn_runnable_internal(env, f, false)
 }
 
+struct SendSyncWrapper<T>(T);
+
+unsafe impl<T> Send for SendSyncWrapper<T> {}
+unsafe impl<T> Sync for SendSyncWrapper<T> {}
+
+type FnWrapper = SendSyncWrapper<
+    Arc<
+        dyn for<'a, 'b> Fn(&'b JNIEnv<'a>, JObject<'a>, JObject<'a>, JObject<'a>, JObject<'a>)
+            + 'static,
+    >,
+>;
+
+fn fn_adapter<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>, JObject<'c>) + 'static,
+    local: bool,
+) -> Result<JObject<'a>> {
+    let arc: Arc<
+        dyn for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>, JObject<'c>),
+    > = Arc::from(f);
+
+    let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnAdapter")?);
+
+    let obj = env.new_object(&class, "(Z)V", &[local.into()])?;
+    env.set_rust_field::<_, _, FnWrapper>(obj, "data", SendSyncWrapper(arc))?;
+    Ok(obj)
+}
+
 pub(crate) mod jni {
     use super::FnWrapper;
     use jni::{errors::Result, objects::JObject, JNIEnv, NativeMethod};
 
-    extern "C" fn fn_run_internal(env: JNIEnv, obj: JObject) {
+    extern "C" fn fn_adapter_call_internal(
+        env: JNIEnv,
+        obj1: JObject,
+        obj2: JObject,
+        arg1: JObject,
+        arg2: JObject,
+    ) {
         use std::panic::AssertUnwindSafe;
 
-        let arc = if let Ok(f) = env.get_rust_field::<_, _, FnWrapper>(obj, "data") {
+        let arc = if let Ok(f) = env.get_rust_field::<_, _, FnWrapper>(obj1, "data") {
             AssertUnwindSafe(f.0.clone())
         } else {
             return;
         };
-        let _ = crate::exceptions::throw_unwind(&env, || arc(&env, obj));
+        let _ = crate::exceptions::throw_unwind(&env, || arc(&env, obj1, obj2, arg1, arg2));
     }
 
-    extern "C" fn fn_close_internal(env: JNIEnv, obj: JObject) {
+    extern "C" fn fn_adapter_close_internal(env: JNIEnv, obj: JObject) {
         let _ = crate::exceptions::throw_unwind(&env, || {
             let _ = env.take_rust_field::<_, _, FnWrapper>(obj, "data");
         });
@@ -173,19 +205,21 @@ pub(crate) mod jni {
     pub fn init(env: &JNIEnv) -> Result<()> {
         use std::ffi::c_void;
 
-        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnRunnableImpl")?);
+        let class = env.auto_local(env.find_class("io/github/gedgygedgy/rust/ops/FnAdapter")?);
         env.register_native_methods(
             &class,
             &[
                 NativeMethod {
-                    name: "runInternal".into(),
-                    sig: "()V".into(),
-                    fn_ptr: fn_run_internal as *mut c_void,
+                    name: "callInternal".into(),
+                    sig:
+                        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+                            .into(),
+                    fn_ptr: fn_adapter_call_internal as *mut c_void,
                 },
                 NativeMethod {
                     name: "closeInternal".into(),
                     sig: "()V".into(),
-                    fn_ptr: fn_close_internal as *mut c_void,
+                    fn_ptr: fn_adapter_close_internal as *mut c_void,
                 },
             ],
         )?;
