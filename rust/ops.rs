@@ -230,6 +230,28 @@ define_fn_adapter! {
     },
 }
 
+define_fn_adapter! {
+    fn_once: fn_once_function,
+    fn_once_local: fn_once_function_local,
+    fn_once_internal: fn_once_function_internal,
+    fn_mut: fn_mut_function,
+    fn_mut_local: fn_mut_function_local,
+    fn_mut_internal: fn_mut_function_internal,
+    fn: fn_function,
+    fn_local: fn_function_local,
+    fn_internal: fn_function_internal,
+    impl_class: "io/github/gedgygedgy/rust/ops/FnFunctionImpl",
+    doc_class: "io.github.gedgygedgy.rust.ops.FnFunction",
+    doc_method: "apply()",
+    doc_fn_once: "fn_once_function",
+    doc_fn: "fn_function",
+    doc_noop: "return `null`",
+    signature: f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>) -> JObject<'c>,
+    closure: move |env, _obj1, obj2, arg1, _arg2| {
+        f(env, obj2, arg1)
+    },
+}
+
 struct SendSyncWrapper<T>(T);
 
 unsafe impl<T> Send for SendSyncWrapper<T> {}
@@ -1267,6 +1289,47 @@ mod test {
                     "apply",
                     "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
                     &[arg1.as_obj().into(), arg2.as_obj().into()],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            assert!(env.is_same_object(ret.as_obj(), actual_ret).unwrap());
+        });
+    }
+
+    #[test]
+    fn test_fn_function_object() {
+        test_utils::JVM_ENV.with(|env| {
+            let arg = env
+                .new_global_ref(env.new_object("java/lang/Object", "()V", &[]).unwrap())
+                .unwrap();
+            let ret = env
+                .new_global_ref(env.new_object("java/lang/Object", "()V", &[]).unwrap())
+                .unwrap();
+            let arg_clone = arg.clone();
+            let ret_clone = ret.clone();
+
+            let obj_ref = Arc::new(Mutex::new(env.new_global_ref(JObject::null()).unwrap()));
+            let obj_ref_2 = obj_ref.clone();
+            let function = super::fn_function(env, move |e, o, a| {
+                let guard = obj_ref_2.lock().unwrap();
+                assert!(e.is_same_object(guard.as_obj(), o).unwrap());
+                assert!(e.is_same_object(arg_clone.as_obj(), a).unwrap());
+                ret_clone.as_obj().into_inner().into()
+            })
+            .unwrap();
+
+            {
+                let mut guard = obj_ref.lock().unwrap();
+                *guard = env.new_global_ref(function).unwrap();
+            }
+
+            let actual_ret = env
+                .call_method(
+                    function,
+                    "apply",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                    &[arg.as_obj().into()],
                 )
                 .unwrap()
                 .l()
