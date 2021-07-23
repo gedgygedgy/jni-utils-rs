@@ -18,12 +18,12 @@ macro_rules! define_fn_adapter {
         doc_fn_once: $dfo:literal,
         doc_fn: $df:literal,
         doc_noop: $dnoop:literal,
-        signature: $closure_name:ident: impl for<'c, 'd> Fn$args:tt + 'static,
+        signature: $closure_name:ident: impl for<'c, 'd> Fn$args:tt -> $ret:ty,
         closure: $closure:expr,
     ) => {
         fn $foi<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            $closure_name: impl for<'c, 'd> FnOnce$args + 'static,
+            $closure_name: impl for<'c, 'd> FnOnce$args -> $ret + 'static,
             local: bool,
         ) -> Result<JObject<'a>> {
             let adapter = env.auto_local(fn_once_adapter(env, $closure, local)?);
@@ -53,7 +53,7 @@ macro_rules! define_fn_adapter {
         #[doc = "."]
         pub fn $fo<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            f: impl for<'c, 'd> FnOnce$args + Send + 'static,
+            f: impl for<'c, 'd> FnOnce$args -> $ret + Send + 'static,
         ) -> Result<JObject<'a>> {
             $foi(env, f, false)
         }
@@ -69,14 +69,14 @@ macro_rules! define_fn_adapter {
         #[doc = "being thrown."]
         pub fn $fol<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            f: impl for<'c, 'd> FnOnce$args + 'static,
+            f: impl for<'c, 'd> FnOnce$args -> $ret + 'static,
         ) -> Result<JObject<'a>> {
             $foi(env, f, true)
         }
 
         fn $fmi<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            mut $closure_name: impl for<'c, 'd> FnMut$args + 'static,
+            mut $closure_name: impl for<'c, 'd> FnMut$args -> $ret + 'static,
             local: bool,
         ) -> Result<JObject<'a>> {
             let adapter = env.auto_local(fn_mut_adapter(env, $closure, local)?);
@@ -111,7 +111,7 @@ macro_rules! define_fn_adapter {
         #[doc = "` recursively will result in a deadlock."]
         pub fn $fm<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            f: impl for<'c, 'd> FnMut$args + Send + 'static,
+            f: impl for<'c, 'd> FnMut$args -> $ret + Send + 'static,
         ) -> Result<JObject<'a>> {
             $fmi(env, f, false)
         }
@@ -127,14 +127,14 @@ macro_rules! define_fn_adapter {
         #[doc = "being thrown."]
         pub fn $fml<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            f: impl for<'c, 'd> FnMut$args + 'static,
+            f: impl for<'c, 'd> FnMut$args -> $ret + 'static,
         ) -> Result<JObject<'a>> {
             $fmi(env, f, true)
         }
 
         fn $fi<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            $closure_name: impl for<'c, 'd> Fn$args + 'static,
+            $closure_name: impl for<'c, 'd> Fn$args -> $ret + 'static,
             local: bool,
         ) -> Result<JObject<'a>> {
             let adapter = env.auto_local(fn_adapter(env, $closure, local)?);
@@ -162,7 +162,7 @@ macro_rules! define_fn_adapter {
         #[doc = "` method recursively."]
         pub fn $f<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            f: impl for<'c, 'd> Fn$args + Send + 'static,
+            f: impl for<'c, 'd> Fn$args -> $ret + Send + Sync + 'static,
         ) -> Result<JObject<'a>> {
             $fi(env, f, false)
         }
@@ -178,7 +178,7 @@ macro_rules! define_fn_adapter {
         #[doc = "being thrown."]
         pub fn $fl<'a: 'b, 'b>(
             env: &'b JNIEnv<'a>,
-            f: impl for<'c, 'd> Fn$args + 'static,
+            f: impl for<'c, 'd> Fn$args -> $ret + 'static,
         ) -> Result<JObject<'a>> {
             $fi(env, f, true)
         }
@@ -201,10 +201,32 @@ define_fn_adapter! {
     doc_fn_once: "fn_once_runnable",
     doc_fn: "fn_runnable",
     doc_noop: "be a no-op",
-    signature: f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) + 'static,
+    signature: f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>) -> (),
     closure: move |env, _obj1, obj2, _arg1, _arg2| {
         f(env, obj2);
         JObject::null()
+    },
+}
+
+define_fn_adapter! {
+    fn_once: fn_once_bi_function,
+    fn_once_local: fn_once_bi_function_local,
+    fn_once_internal: fn_once_bi_function_internal,
+    fn_mut: fn_mut_bi_function,
+    fn_mut_local: fn_mut_bi_function_local,
+    fn_mut_internal: fn_mut_bi_function_internal,
+    fn: fn_bi_function,
+    fn_local: fn_bi_function_local,
+    fn_internal: fn_bi_function_internal,
+    impl_class: "io/github/gedgygedgy/rust/ops/FnBiFunctionImpl",
+    doc_class: "io.github.gedgygedgy.rust.ops.FnBiFunction",
+    doc_method: "apply()",
+    doc_fn_once: "fn_once_bi_function",
+    doc_fn: "fn_bi_funciton",
+    doc_noop: "return `null`",
+    signature: f: impl for<'c, 'd> Fn(&'d JNIEnv<'c>, JObject<'c>, JObject<'c>, JObject<'c>) -> JObject<'c>,
+    closure: move |env, _obj1, obj2, arg1, arg2| {
+        f(env, obj2, arg1, arg2)
     },
 }
 
@@ -449,7 +471,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_run() {
+    fn test_fn_once_runnable_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -466,7 +488,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_close() {
+    fn test_fn_once_runnable_close() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -483,7 +505,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_run_close() {
+    fn test_fn_once_runnable_run_close() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -500,7 +522,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_close_run() {
+    fn test_fn_once_runnable_close_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -517,7 +539,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_thread() {
+    fn test_fn_once_runnable_thread() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -538,7 +560,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_object() {
+    fn test_fn_once_runnable_object() {
         test_utils::JVM_ENV.with(|env| {
             let obj_ref = Arc::new(Mutex::new(env.new_global_ref(JObject::null()).unwrap()));
             let obj_ref_2 = obj_ref.clone();
@@ -558,7 +580,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_recursive() {
+    fn test_fn_once_runnable_recursive() {
         test_utils::JVM_ENV.with(|env| {
             let arc = Arc::new(Mutex::new(false));
             let arc2 = arc.clone();
@@ -584,7 +606,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_panic() {
+    fn test_fn_once_runnable_panic() {
         test_utils::JVM_ENV.with(|env| {
             let runnable =
                 super::fn_once_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
@@ -606,7 +628,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_close_self() {
+    fn test_fn_once_runnable_close_self() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -627,7 +649,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_drop_panic() {
+    fn test_fn_once_runnable_drop_panic() {
         test_utils::JVM_ENV.with(|env| {
             let dp = create_drop_panic_fn();
             let runnable = super::fn_once_runnable(env, dp).unwrap();
@@ -650,7 +672,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_local_run() {
+    fn test_fn_once_runnable_local_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn_local();
             test_data_local(&data, 0, 2);
@@ -667,7 +689,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_once_local_thread() {
+    fn test_fn_once_runnable_local_thread() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn_local();
             test_data_local(&data, 0, 2);
@@ -709,7 +731,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_run() {
+    fn test_fn_mut_runnable_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -726,7 +748,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_close() {
+    fn test_fn_mut_runnable_close() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -743,7 +765,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_run_close() {
+    fn test_fn_mut_runnable_run_close() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -760,7 +782,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_close_run() {
+    fn test_fn_mut_runnable_close_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -777,7 +799,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_thread() {
+    fn test_fn_mut_runnable_thread() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -798,7 +820,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_object() {
+    fn test_fn_mut_runnable_object() {
         test_utils::JVM_ENV.with(|env| {
             let obj_ref = Arc::new(Mutex::new(env.new_global_ref(JObject::null()).unwrap()));
             let obj_ref_2 = obj_ref.clone();
@@ -818,7 +840,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_panic() {
+    fn test_fn_mut_runnable_panic() {
         test_utils::JVM_ENV.with(|env| {
             let runnable = super::fn_mut_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
             let result = try_block(env, || {
@@ -839,7 +861,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_close_self() {
+    fn test_fn_mut_runnable_close_self() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -860,7 +882,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_drop_panic() {
+    fn test_fn_mut_runnable_drop_panic() {
         test_utils::JVM_ENV.with(|env| {
             let dp = create_drop_panic_fn();
             let runnable = super::fn_mut_runnable(env, dp).unwrap();
@@ -883,7 +905,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_local_run() {
+    fn test_fn_mut_runnable_local_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn_local();
             test_data_local(&data, 0, 2);
@@ -900,7 +922,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_mut_local_thread() {
+    fn test_fn_mut_runnable_local_thread() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn_local();
             test_data_local(&data, 0, 2);
@@ -942,7 +964,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_run() {
+    fn test_fn_runnable_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -959,7 +981,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_close() {
+    fn test_fn_runnable_close() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -976,7 +998,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_run_close() {
+    fn test_fn_runnable_run_close() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -993,7 +1015,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_close_run() {
+    fn test_fn_runnable_close_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -1010,7 +1032,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_thread() {
+    fn test_fn_runnable_thread() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -1031,7 +1053,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_object() {
+    fn test_fn_runnable_object() {
         test_utils::JVM_ENV.with(|env| {
             let obj_ref = Arc::new(Mutex::new(env.new_global_ref(JObject::null()).unwrap()));
             let obj_ref_2 = obj_ref.clone();
@@ -1051,7 +1073,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_recursive() {
+    fn test_fn_runnable_recursive() {
         test_utils::JVM_ENV.with(|env| {
             let arc = Arc::new(Mutex::new(false));
             let arc2 = arc.clone();
@@ -1084,7 +1106,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_panic() {
+    fn test_fn_runnable_panic() {
         test_utils::JVM_ENV.with(|env| {
             let runnable = super::fn_runnable(env, |_e, _o| panic!("This is a panic")).unwrap();
             let result = try_block(env, || {
@@ -1105,7 +1127,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_close_self() {
+    fn test_fn_runnable_close_self() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn();
             test_data(&data, 0, 2);
@@ -1126,7 +1148,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_drop_panic() {
+    fn test_fn_runnable_drop_panic() {
         test_utils::JVM_ENV.with(|env| {
             let dp = create_drop_panic_fn();
             let runnable = super::fn_runnable(env, dp).unwrap();
@@ -1149,7 +1171,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_local_run() {
+    fn test_fn_runnable_local_run() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn_local();
             test_data_local(&data, 0, 2);
@@ -1166,7 +1188,7 @@ mod test {
     }
 
     #[test]
-    fn test_fn_local_thread() {
+    fn test_fn_runnable_local_thread() {
         test_utils::JVM_ENV.with(|env| {
             let (data, f) = create_test_fn_local();
             test_data_local(&data, 0, 2);
@@ -1204,6 +1226,52 @@ mod test {
             });
             thread.join().unwrap();
             test_data_local(&data, 0, 2);
+        });
+    }
+
+    #[test]
+    fn test_fn_bi_function_object() {
+        test_utils::JVM_ENV.with(|env| {
+            let arg1 = env
+                .new_global_ref(env.new_object("java/lang/Object", "()V", &[]).unwrap())
+                .unwrap();
+            let arg2 = env
+                .new_global_ref(env.new_object("java/lang/Object", "()V", &[]).unwrap())
+                .unwrap();
+            let ret = env
+                .new_global_ref(env.new_object("java/lang/Object", "()V", &[]).unwrap())
+                .unwrap();
+            let arg1_clone = arg1.clone();
+            let arg2_clone = arg2.clone();
+            let ret_clone = ret.clone();
+
+            let obj_ref = Arc::new(Mutex::new(env.new_global_ref(JObject::null()).unwrap()));
+            let obj_ref_2 = obj_ref.clone();
+            let bi_function = super::fn_bi_function(env, move |e, o, a1, a2| {
+                let guard = obj_ref_2.lock().unwrap();
+                assert!(e.is_same_object(guard.as_obj(), o).unwrap());
+                assert!(e.is_same_object(arg1_clone.as_obj(), a1).unwrap());
+                assert!(e.is_same_object(arg2_clone.as_obj(), a2).unwrap());
+                ret_clone.as_obj().into_inner().into()
+            })
+            .unwrap();
+
+            {
+                let mut guard = obj_ref.lock().unwrap();
+                *guard = env.new_global_ref(bi_function).unwrap();
+            }
+
+            let actual_ret = env
+                .call_method(
+                    bi_function,
+                    "apply",
+                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                    &[arg1.as_obj().into(), arg2.as_obj().into()],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            assert!(env.is_same_object(ret.as_obj(), actual_ret).unwrap());
         });
     }
 }

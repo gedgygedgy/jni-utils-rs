@@ -1,7 +1,5 @@
 package io.github.gedgygedgy.rust.ops;
 
-import io.github.gedgygedgy.rust.thread.LocalThreadChecker;
-
 import java.io.Closeable;
 
 final class FnRunnableImpl implements FnRunnable {
